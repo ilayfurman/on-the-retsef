@@ -481,11 +481,24 @@ function Gate() {
   const [rehydrating, setRehydrating] = useState(true)
   const [checkingInvite, setCheckingInvite] = useState(false)
 
+  // Links are read on load *and* whenever the #… part changes: pasting an
+  // invite or pack link into a tab that's already on the game doesn't reload
+  // the page. linkTick remounts the sign-in screen so it re-reads the link.
+  const [linkTick, setLinkTick] = useState(0)
   useEffect(() => {
-    const invite = readInviteHash()
-    if (invite) setRoute({ name: 'join', roomCode: invite.code })
-    const packCode = readPackHash()
-    if (packCode) setRoute({ name: 'packInvite', shareCode: packCode })
+    function readLinks() {
+      const invite = readInviteHash()
+      if (invite) setRoute({ name: 'join', roomCode: invite.code })
+      const packCode = readPackHash()
+      if (packCode) setRoute({ name: 'packInvite', shareCode: packCode })
+    }
+    readLinks()
+    function onHashChange() {
+      readLinks()
+      setLinkTick((t) => t + 1)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
   // A "Share link" points at #/join/CODE, but a guest who isn't signed in yet
@@ -574,7 +587,7 @@ function Gate() {
 
   const isGuest = !!session?.user.is_anonymous
   if (loading) return <div data-testid="app-root"><Splash /></div>
-  if (!session) return <div data-testid="app-root"><SignIn /></div>
+  if (!session) return <div data-testid="app-root"><SignIn key={linkTick} /></div>
   if (rehydrating || checkingInvite) return <div data-testid="app-root"><Splash /></div>
 
   async function handleCreate(name: string, chosenAvatar: string) {

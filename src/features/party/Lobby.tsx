@@ -6,6 +6,7 @@ import { Starfield } from '../../components/Starfield'
 import { Btn } from '../../components/Btn'
 import { ShuffleReveal } from './ShuffleReveal'
 import { AvatarPicker, AVATAR_BG } from './AvatarPicker'
+import { colorForTeam } from '../../components/TeamScoreboard'
 
 type Player = { id: string; display_name: string; avatar: string; team_id: string | null; confirmed_rematch: boolean }
 type Team = { id: string; name: string }
@@ -13,7 +14,6 @@ type TeamMode = 'random' | 'manual'
 
 // Same rotation TeamScoreboard uses, so a team's color stays consistent
 // between the lobby and the in-game scoreboard.
-const TEAM_COLORS = ['#FF6FA3', '#5BD6FF', '#8C6BFF', '#FFD166']
 
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16)
@@ -746,7 +746,7 @@ export function Lobby({
 
   // Stable color per team, keyed by id so colors don't shuffle across renders.
   const sortedTeams = [...teams].sort((a, b) => a.id.localeCompare(b.id))
-  const teamColor = new Map(sortedTeams.map((t, i) => [t.id, TEAM_COLORS[i % TEAM_COLORS.length]]))
+  const teamColor = new Map(sortedTeams.map((t) => [t.id, colorForTeam(teams, t.id)]))
   const playersByTeam = new Map(teams.map((t) => [t.id, players.filter((p) => p.team_id === t.id)]))
 
   const me = players.find((p) => p.id === myPlayerId)

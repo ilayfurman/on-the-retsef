@@ -26,12 +26,13 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x))
 }
 
-/** Scales a spectrum end label down as it gets longer, matching the same
+/** Scales a spectrum's end labels down as they get longer, matching the same
  * idea as ClueCard's clue text — a long label wraps onto a second line
  * instead of running off the edge of the dial at a fixed size meant for a
- * short word. */
-function endLabelFontSize(text: string): number {
-  const len = text.length
+ * short word. Both ends share one size (driven by whichever is longer) so a
+ * short "Left" next to a long "Right" doesn't render in two different sizes. */
+function endLabelFontSize(left: string, right: string): number {
+  const len = Math.max(left.length, right.length)
   if (len <= 10) return 17
   if (len <= 16) return 15
   if (len <= 24) return 13
@@ -484,7 +485,7 @@ export function DialFan({
           alignItems: 'center',
           gap: 2,
           color: 'var(--text)',
-          font: `600 ${endLabelFontSize(left)}px/1.2 var(--font-body)`,
+          font: `600 ${endLabelFontSize(left, right ?? '')}px/1.2 var(--font-body)`,
           pointerEvents: 'none',
           textAlign: 'center',
           overflowWrap: 'break-word',
@@ -507,7 +508,7 @@ export function DialFan({
           alignItems: 'center',
           gap: 2,
           color: 'var(--text)',
-          font: `600 ${endLabelFontSize(right)}px/1.2 var(--font-body)`,
+          font: `600 ${endLabelFontSize(left ?? '', right)}px/1.2 var(--font-body)`,
           pointerEvents: 'none',
           textAlign: 'center',
           overflowWrap: 'break-word',

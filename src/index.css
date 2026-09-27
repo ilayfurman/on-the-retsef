@@ -119,3 +119,38 @@ body {
   0%, 55% { transform: translateX(0); }
   100% { transform: translateX(320px); }
 }
+
+/* Final scoreboard (Podium Race). */
+@keyframes lane-in {
+  0% { opacity: 0; transform: translateY(28px) scale(.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bar-shine {
+  0% { transform: translateY(110%) skewY(-18deg); }
+  55%, 100% { transform: translateY(-160%) skewY(-18deg); }
+}
+.bar-shine {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  height: 40%;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .45), transparent);
+  animation: bar-shine 2.8s ease-in-out .6s infinite;
+}
+.level-line .level-rule {
+  height: 0;
+  border-top: 2px dashed rgba(200, 180, 255, .28);
+  transition: border-color .3s ease;
+}
+.level-line .level-label {
+  color: rgba(200, 180, 255, .45);
+  transition: color .3s ease, text-shadow .3s ease;
+}
+.level-line[data-lit] .level-rule {
+  border-top-color: rgba(255, 209, 102, .85);
+}
+.level-line[data-lit] .level-label {
+  color: #FFD166;
+  text-shadow: 0 0 12px rgba(255, 209, 102, .6);
+}

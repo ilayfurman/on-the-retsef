@@ -5,10 +5,22 @@ type Team = { id: string; name: string; score: number }
 
 export const TEAM_COLORS = ['#FF6FA3', '#5BD6FF', '#8C6BFF', '#FFD166']
 
-/** Same stable, id-sorted color assignment TeamScoreboard itself uses — for
- * anything elsewhere (score-reveal popups, etc.) that needs a team's color
- * to match what's on screen here. */
-export function colorForTeam(teams: Team[], teamId: string): string {
+// Teams are named after their color server-side ("Pink Team", "Sky Team"…),
+// so the name decides the color — otherwise "Pink Team" could render blue.
+const COLOR_BY_NAME: [RegExp, string][] = [
+  [/^pink\b/i, TEAM_COLORS[0]],
+  [/^sky\b/i, TEAM_COLORS[1]],
+  [/^violet\b/i, TEAM_COLORS[2]],
+  [/^gold\b/i, TEAM_COLORS[3]],
+]
+
+/** A team's color, used everywhere a team appears (scoreboard, lobby, score
+ * popups, final screen) so it always matches. Color-named teams get their
+ * named color; anything else falls back to a stable, id-sorted rotation. */
+export function colorForTeam(teams: { id: string; name: string }[], teamId: string): string {
+  const team = teams.find((t) => t.id === teamId)
+  const named = team && COLOR_BY_NAME.find(([re]) => re.test(team.name))
+  if (named) return named[1]
   const sorted = [...teams].sort((a, b) => a.id.localeCompare(b.id))
   const index = sorted.findIndex((t) => t.id === teamId)
   return TEAM_COLORS[Math.max(index, 0) % TEAM_COLORS.length]
@@ -70,8 +82,8 @@ export function TeamScoreboard({
 
   return (
     <div style={gridStyle}>
-      {sortedTeams.map((t, index) => {
-        const color = TEAM_COLORS[index % TEAM_COLORS.length]
+      {sortedTeams.map((t) => {
+        const color = colorForTeam(teams, t.id)
         const isActive = t.id === activeTeamId
         return (
           <div key={t.id} data-score-card={t.id} style={cardStyle(color, isActive, hasActive)}>

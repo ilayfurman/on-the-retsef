@@ -114,6 +114,10 @@ function PartyRoom({
   // told their screen the prop-level isHost it started with was stale.
   const [isHostLive, setIsHostLive] = useState(isHost)
   const [endedReason, setEndedReason] = useState<string | null>(null)
+  // Set on this client's own playing->finished edge, so the end-of-game show
+  // plays for people who watched the game end, not after a refresh.
+  const [celebrateEnd, setCelebrateEnd] = useState(false)
+  const [turnsPlayed, setTurnsPlayed] = useState<number | null>(null)
 
   async function reloadPartyState() {
     // This is triggered from several independent sources — the parties/
@@ -225,6 +229,11 @@ function PartyRoom({
     const prevHasStarted = prevHasStartedRef.current
     prevStatusRef.current = status
     prevHasStartedRef.current = hasStarted
+    if (status === 'playing') {
+      setCelebrateEnd(false)
+      setTurnsPlayed(null)
+    }
+    if (status === 'finished' && prevStatus === 'playing') setCelebrateEnd(true)
     // Must be a genuine lobby->playing edge, not just "the first fetch after
     // a refresh happened to land on 'playing'" — `prevStatus` starts out
     // `null` on every mount, so a page reload mid-game would otherwise look
@@ -240,6 +249,29 @@ function PartyRoom({
       return () => clearTimeout(timer)
     }
   }, [status, hasStarted, teams.length])
+
+  // A lone team is judged against a perfect game, so the final screen needs
+  // how many turns were actually played. Fetched once at the end — turns are
+  // deleted when the host reopens the lobby, so it's never refetched.
+  useEffect(() => {
+    if (status !== 'finished' || teams.length !== 1 || turnsPlayed !== null) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { count } = await supabase
+          .from('turns_view')
+          .select('id', { count: 'exact', head: true })
+          .eq('party_id', partyId)
+          .eq('status', 'revealed')
+        if (!cancelled && count) setTurnsPlayed(count)
+      } catch {
+        // Falls back to rounds × team size on the scoreboard.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [status, teams.length, turnsPlayed, partyId])
 
   if (status === null) {
     return <Splash />
@@ -283,6 +315,11 @@ function PartyRoom({
       <>
         <FinalScoreboard
           teams={teams}
+          players={players}
+          myPlayerId={myPlayerId}
+          turnsPlayed={turnsPlayed}
+          rounds={rounds}
+          celebrate={celebrateEnd}
           onPlayAgain={async () => {
             const { error } = await supabase.rpc('confirm_rematch', { p_party_id: partyId })
             if (error) throw error
@@ -368,6 +405,11 @@ function PartyRoom({
       <>
         <FinalScoreboard
           teams={teams}
+          players={players}
+          myPlayerId={myPlayerId}
+          turnsPlayed={turnsPlayed}
+          rounds={rounds}
+          celebrate={celebrateEnd}
           endedReason={endedReason}
           onPlayAgain={async () => {
             const { error } = await supabase.rpc('confirm_rematch', { p_party_id: partyId })
@@ -426,6 +468,20 @@ function Gate() {
     if (hash) setRoute({ name: 'join', roomCode: hash[1].toUpperCase() })
   }, [])
 
+  // A "Share link" points at #/join/CODE, but a guest who isn't signed in yet
+  // lands on SignIn first — route becomes 'join' before there's a session to
+  // act on. Once they've verified their code, pick that back up here and
+  // drop them straight into the name/avatar step for that room, instead of
+  // stranding them on Home to find and retype the code by hand. Consumed
+  // once: route flips to 'home' and the hash is cleared, so Back or a
+  // refresh doesn't re-trigger the same prompt.
+  useEffect(() => {
+    if (route.name !== 'join' || loading || rehydrating || !session) return
+    setPendingAction({ type: 'join', roomCode: route.roomCode })
+    setRoute({ name: 'home' })
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }, [route, loading, rehydrating, session])
+
   // Recover "which party am I in" after a page reload — route state otherwise
   // lives only in memory, so a refresh would silently strand a player mid-game.
   useEffect(() => {
@@ -460,7 +516,11 @@ function Gate() {
           row.parties.status !== 'finished' &&
           Date.now() - new Date(row.parties.created_at).getTime() < REJOIN_WINDOW_MS,
       )
-      if (active && active.parties) {
+      // An invite link for a *different* room wins over auto-rejoining an
+      // old one — clicking a friend's link should take you to their party.
+      const linkCode = window.location.hash.match(/^#\/join\/([A-Z]{4})$/i)?.[1]?.toUpperCase()
+      if (active && active.parties && (!linkCode || linkCode === active.parties.room_code.toUpperCase())) {
+        if (linkCode) window.history.replaceState(null, '', window.location.pathname + window.location.search)
         setDisplayName(active.display_name)
         setAvatar(active.avatar)
         saveIdentity(active.display_name, active.avatar)
@@ -566,19 +626,36 @@ function Gate() {
 // statically false in production builds, so this whole import is dropped.
 const RevealPreview = import.meta.env.DEV ? lazy(() => import('./features/dev/RevealPreview')) : null
 const ShufflePreview = import.meta.env.DEV ? lazy(() => import('./features/dev/ShufflePreview')) : null
+const FinalPreview = import.meta.env.DEV ? lazy(() => import('./features/dev/FinalPreview')) : null
 
 export default function App() {
-  if (RevealPreview && window.location.hash === '#/fx-preview') {
+  // Editing only the #… part of the URL doesn't reload the page, so re-render
+  // on hashchange — otherwise typing a preview URL into an already-open tab
+  // would stay on whatever screen was showing.
+  const [hash, setHash] = useState(() => window.location.hash)
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  if (RevealPreview && hash === '#/fx-preview') {
     return (
       <Suspense fallback={null}>
         <RevealPreview />
       </Suspense>
     )
   }
-  if (ShufflePreview && window.location.hash.startsWith('#/shuffle-preview')) {
+  if (ShufflePreview && hash.startsWith('#/shuffle-preview')) {
     return (
       <Suspense fallback={null}>
-        <ShufflePreview />
+        <ShufflePreview key={hash} />
+      </Suspense>
+    )
+  }
+  if (FinalPreview && hash.startsWith('#/final-preview')) {
+    return (
+      <Suspense fallback={null}>
+        <FinalPreview key={hash} />
       </Suspense>
     )
   }

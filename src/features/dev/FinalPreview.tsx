@@ -1,0 +1,50 @@
+import { useState } from 'react'
+import { FinalScoreboard } from '../game/FinalScoreboard'
+
+/**
+ * DEV-ONLY (mounted from App behind import.meta.env.DEV, so it never ships):
+ * replays the end-of-game Podium Race with fake teams.
+ *
+ *   #/final-preview/<scores>[/<playersPerTeam>][/<turns>]
+ *   e.g. #/final-preview/12,9       two teams
+ *        #/final-preview/8,11,5,11  four teams, a tie at the top
+ *        #/final-preview/7/2/4      one team, 2 players, 4 turns played
+ */
+
+const AVATARS = ['🌮', '😬', '🐝', '🦄', '🦊', '🐙', '🌶️', '🎈', '🧠', '🐸', '🦁', '🍩']
+const NAMES = ['You', 'Maya', 'Noam', 'Dana', 'Omer', 'Shira', 'Itay', 'Yael', 'Roni', 'Tal', 'Gal', 'Lior', 'Adi', 'Ido', 'Mor', 'Ben', 'Neta', 'Eli', 'Hila', 'Asaf']
+const TEAM_NAMES = ['Pink Team', 'Sky Team', 'Violet Team', 'Gold Team']
+
+function parse() {
+  const parts = window.location.hash.replace('#/final-preview', '').split('/').filter(Boolean)
+  const scores = (parts[0] ?? '12,9').split(',').map(Number)
+  const perTeam = Number(parts[1] ?? 2)
+  const turns = parts[2] ? Number(parts[2]) : null
+  return { scores, perTeam, turns }
+}
+
+export default function FinalPreview() {
+  const [cfg] = useState(parse)
+  const [run, setRun] = useState(0)
+  // Shuffled ids so lane order can't accidentally lean on id order.
+  const teams = cfg.scores.map((score, i) => ({ id: `t${(i * 7 + 3) % 10}`, name: TEAM_NAMES[i % 4], score }))
+  const players = teams.flatMap((t, ti) =>
+    Array.from({ length: cfg.perTeam }, (_, k) => {
+      const n = ti * cfg.perTeam + k
+      return { id: `p${n}`, display_name: NAMES[n % NAMES.length], avatar: AVATARS[n % AVATARS.length], team_id: t.id }
+    }),
+  )
+  return (
+    <FinalScoreboard
+      key={run}
+      teams={teams}
+      players={players}
+      myPlayerId="p0"
+      turnsPlayed={cfg.turns}
+      rounds={2}
+      celebrate
+      onPlayAgain={() => setRun((r) => r + 1)}
+      onLeave={() => setRun((r) => r + 1)}
+    />
+  )
+}

@@ -55,6 +55,9 @@ export function SignIn() {
   const [codeSent, setCodeSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const digitRefs = useRef<Array<HTMLInputElement | null>>([])
+  // Arrived from a friend's "Share link" (#/join/CODE)? Say so, so it's clear
+  // signing in is a quick step on the way to their party, not a detour.
+  const [inviteCode] = useState(() => window.location.hash.match(/^#\/join\/([A-Z]{4})$/i)?.[1]?.toUpperCase() ?? null)
 
   async function sendCode(e: FormEvent) {
     e.preventDefault()
@@ -153,6 +156,22 @@ export function SignIn() {
                 <br />
                 How close can you get?
               </p>
+              {inviteCode && (
+                <p
+                  style={{
+                    margin: '4px 0 0',
+                    padding: '8px 14px',
+                    borderRadius: 999,
+                    background: 'rgba(255,209,102,.12)',
+                    border: '1px solid rgba(255,209,102,.35)',
+                    font: '600 14px/1.3 var(--font-body)',
+                    color: 'var(--text)',
+                    textAlign: 'center',
+                  }}
+                >
+                  You&rsquo;re invited to room <span style={{ color: 'var(--gold)', letterSpacing: '.08em' }}>{inviteCode}</span> &mdash; sign in to join
+                </p>
+              )}
               <input
                 id="email"
                 aria-label="Email"

@@ -108,4 +108,12 @@ describe('DialFan reveal impact', () => {
       vi.useRealTimers()
     }
   })
+
+  it('sizes both end labels the same, driven by the longer one', () => {
+    render(<DialFan value={0.5} left="Niche interest" right="Mainstream obsession" />)
+    const left = screen.getByText('Niche interest').parentElement!
+    const right = screen.getByText('Mainstream obsession').parentElement!
+    expect(left.style.font).toBe(right.style.font)
+    expect(left.style.font).toContain('13px')
+  })
 })

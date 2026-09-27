@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { Starfield } from '../../components/Starfield'
 import { Btn } from '../../components/Btn'
 import { ParticleLayer } from '../../components/fx/ParticleLayer'
+import { colorForTeam } from '../../components/TeamScoreboard'
 import { burst, sparkle } from '../../components/fx/particles'
 import { clamp01, dampedSpring, ease, lerp, prefersReducedMotion } from '../../lib/motion'
 import { stepBalls, type Ball } from './shuffle/physics'
@@ -517,7 +518,7 @@ export function ShuffleReveal({
       const L = live.current
       const teamOf = new Map<string, { teamId: string; color: string }>()
       L.teams.forEach((t, i) => {
-        for (const p of L.playersByTeam.get(t.id) ?? []) teamOf.set(p.id, { teamId: t.id, color: TEAM_COLORS[i % TEAM_COLORS.length] })
+        for (const p of L.playersByTeam.get(t.id) ?? []) teamOf.set(p.id, { teamId: t.id, color: L.teams.length > 1 ? colorForTeam(L.teams, t.id) : TEAM_COLORS[i % TEAM_COLORS.length] })
       })
       // Big groups deal faster so the show doesn't drag.
       const stagger = Math.max(n > 12 ? 105 : 140, Math.min(300, 1300 / n))
@@ -867,7 +868,7 @@ export function ShuffleReveal({
     return {
       id: t?.id ?? `shell-${i}`,
       name: boxCount === 1 ? "Everyone's on one team" : (t?.name ?? TEAM_NAMES[i % TEAM_NAMES.length]),
-      color: TEAM_COLORS[i % TEAM_COLORS.length],
+      color: t && boxCount > 1 ? colorForTeam(teams, t.id) : TEAM_COLORS[i % TEAM_COLORS.length],
       members: t ? (playersByTeam.get(t.id) ?? []) : [],
     }
   })

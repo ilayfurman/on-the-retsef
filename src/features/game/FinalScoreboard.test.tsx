@@ -25,4 +25,42 @@ describe('FinalScoreboard', () => {
     expect(onPlayAgain).toHaveBeenCalled()
     expect(onLeave).toHaveBeenCalled()
   })
+
+  it('names the winner and the margin', () => {
+    render(
+      <FinalScoreboard
+        teams={[{ id: 'a', name: 'Pink Team', score: 12 }, { id: 'b', name: 'Sky Team', score: 9 }]}
+        onPlayAgain={vi.fn()}
+        onLeave={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('heading', { name: 'PINK TEAM WINS!' })).toBeInTheDocument()
+    expect(screen.getByText('Won by 3 points')).toBeInTheDocument()
+  })
+
+  it('calls a tie a tie', () => {
+    render(
+      <FinalScoreboard
+        teams={[{ id: 'a', name: 'Pink Team', score: 8 }, { id: 'b', name: 'Sky Team', score: 8 }]}
+        onPlayAgain={vi.fn()}
+        onLeave={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('heading', { name: "IT'S A TIE!" })).toBeInTheDocument()
+  })
+
+  it('rates a lone team against a perfect game instead of calling it a winner', () => {
+    render(
+      <FinalScoreboard
+        teams={[{ id: 'a', name: 'Pink Team', score: 7 }]}
+        turnsPlayed={4}
+        onPlayAgain={vi.fn()}
+        onLeave={vi.fn()}
+      />
+    )
+    // 7 of a possible 16.
+    expect(screen.getByRole('heading', { name: 'SOLID TEAMWORK!' })).toBeInTheDocument()
+    expect(screen.getByText('7 points in 4 turns')).toBeInTheDocument()
+    expect(screen.queryByText(/wins/i)).not.toBeInTheDocument()
+  })
 })

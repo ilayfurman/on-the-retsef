@@ -35,7 +35,8 @@ export function readInviteHash(): { code: string; valid: boolean } | null {
   } catch {
     // leave as-is
   }
-  code = code.trim().toUpperCase()
+  // Just the first word: pasted links sometimes drag message text along.
+  code = code.trim().split(/\s+/)[0].toUpperCase()
   return { code, valid: /^[A-Z]{4}$/.test(code) }
 }
 

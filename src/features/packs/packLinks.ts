@@ -1,8 +1,16 @@
 import { supabase } from '../../lib/supabaseClient'
 
-/** The pack share code in the URL (#/pack/CODE), if any. */
+/** The pack share code in the URL (#/pack/CODE), if any. Anything after the
+ * code is ignored — some share targets paste the message text in with the
+ * link, and that shouldn't break it. */
 export function readPackHash(): string | null {
-  const m = window.location.hash.match(/^#\/pack\/([A-Z0-9]{4,12})$/i)
+  let hash = window.location.hash
+  try {
+    hash = decodeURIComponent(hash)
+  } catch {
+    // leave as-is
+  }
+  const m = hash.match(/^#\/pack\/([A-Z0-9]{4,12})(?![A-Z0-9])/i)
   return m ? m[1].toUpperCase() : null
 }
 
@@ -10,14 +18,16 @@ export function packLink(shareCode: string) {
   return `${window.location.origin}${window.location.pathname}#/pack/${shareCode}`
 }
 
-/** Phone share sheet when there is one (WhatsApp, Messages…), else copies the
- * link. Resolves to what happened so the button can say so. */
+/** On phones, the share sheet (WhatsApp, Messages…); on computers, just
+ * copies the link — desktop share menus' "Copy" glues any message text onto
+ * the link. Only the bare link is ever shared. Resolves to what happened so
+ * the button can say so. */
 export async function sharePack(shareCode: string, name: string): Promise<'shared' | 'copied' | 'failed'> {
   const url = packLink(shareCode)
-  const text = `Here's my "${name}" pack for On the Retsef — tap to add your own copy:`
-  if (typeof navigator.share === 'function') {
+  const isPhone = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+  if (isPhone && typeof navigator.share === 'function') {
     try {
-      await navigator.share({ title: name, text, url })
+      await navigator.share({ title: `${name} — On the Retsef pack`, url })
       return 'shared'
     } catch (err) {
       // Closing the share sheet isn't a failure worth falling back from.

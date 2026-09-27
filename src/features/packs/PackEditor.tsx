@@ -106,6 +106,8 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [liveOffset, setLiveOffset] = useState(0)
   const dragStartXRef = useRef(0)
+  // Whether the current press moved enough to be a swipe rather than a tap.
+  const movedRef = useRef(false)
 
   async function load() {
     const [{ data: packRows }, { data }] = await Promise.all([
@@ -130,8 +132,55 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
     await load()
   }
 
+  // Tapping a card opens it in the "Add one" form, filled in, to edit.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const formRef = useRef<HTMLDivElement>(null)
+  const leftInputRef = useRef<HTMLInputElement>(null)
+
+  function startEdit(sp: Spectrum) {
+    setMode('one')
+    setEditingId(sp.id)
+    setLeft(sp.left_label)
+    setRight(sp.right_label)
+    setSpectrumError(null)
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+      leftInputRef.current?.focus({ preventScroll: true })
+    })
+  }
+
+  // Switching to "Paste a list"/"Full replace" drops an edit in progress.
+  useEffect(() => {
+    if (mode !== 'one' && editingId) cancelEdit()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
+
+  function cancelEdit() {
+    setEditingId(null)
+    setLeft('')
+    setRight('')
+  }
+
+  async function saveEdit() {
+    if (!editingId) return
+    setSavingEdit(true)
+    setSpectrumError(null)
+    try {
+      const { error } = await supabase.rpc('update_spectrum', { p_spectrum_id: editingId, p_left_label: left.trim(), p_right_label: right.trim() })
+      if (error) throw error
+      cancelEdit()
+      await load()
+    } catch (err) {
+      setSpectrumError(errorMessage(err, 'Could not save this card. Try again.'))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   async function deleteSpectrum(id: string) {
     setOpenSpectrumId(null)
+    if (id === editingId) cancelEdit()
     setSpectrumError(null)
     try {
       const { error } = await supabase.rpc('delete_spectrum', { p_spectrum_id: id })
@@ -159,6 +208,7 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
 
   function handleRowPointerDown(id: string, e: ReactPointerEvent<HTMLDivElement>) {
     dragStartXRef.current = e.clientX
+    movedRef.current = false
     setDraggingId(id)
     setLiveOffset(openSpectrumId === id ? -SWIPE_REVEAL_PX : 0)
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -168,12 +218,21 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
     if (draggingId !== id) return
     const base = openSpectrumId === id ? -SWIPE_REVEAL_PX : 0
     const delta = e.clientX - dragStartXRef.current
+    if (Math.abs(delta) > 6) movedRef.current = true
     setLiveOffset(Math.max(-SWIPE_REVEAL_PX, Math.min(0, base + delta)))
   }
 
-  function handleRowPointerUp(id: string) {
+  function handleRowPointerUp(id: string, tap = true) {
     if (draggingId !== id) return
     setDraggingId(null)
+    // A tap (no drag) edits the card — or just closes it if it was swiped open.
+    if (tap && !movedRef.current) {
+      const wasOpen = openSpectrumId === id
+      setOpenSpectrumId(null)
+      const sp = spectrums.find((x) => x.id === id)
+      if (!wasOpen && sp) startEdit(sp)
+      return
+    }
     setOpenSpectrumId(liveOffset <= -SWIPE_REVEAL_PX / 2 ? id : null)
   }
 
@@ -419,13 +478,23 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
         </div>
 
         {mode === 'one' && (
-          <div style={cardStyle}>
+          <div ref={formRef} style={editingId ? { ...cardStyle, border: '1px solid rgba(255,209,102,.45)', boxShadow: '0 0 24px rgba(255,209,102,.12)' } : cardStyle}>
+            {editingId && (
+              <span style={{ font: '600 11px/1 var(--font-body)', letterSpacing: '.14em', color: 'var(--gold)', padding: '0 4px' }}>EDITING CARD</span>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 8, alignItems: 'center' }}>
-              <input aria-label="Left label" placeholder="Left" value={left} onChange={(e) => setLeft(e.target.value)} style={inputStyle} />
+              <input ref={leftInputRef} aria-label="Left label" placeholder="Left" value={left} onChange={(e) => setLeft(e.target.value)} style={inputStyle} />
               <span style={{ font: '400 20px/1 var(--font-body)', color: 'var(--text-muted)' }}>⟷</span>
               <input aria-label="Right label" placeholder="Right" value={right} onChange={(e) => setRight(e.target.value)} style={inputStyle} />
             </div>
-            <Btn kind="secondary" size="sm" label="Add spectrum" onClick={addSpectrum} disabled={!left.trim() || !right.trim()} />
+            {editingId ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                <Btn kind="ghost" size="sm" label="Cancel" onClick={cancelEdit} disabled={savingEdit} />
+                <Btn kind="primary" size="sm" label={savingEdit ? 'Saving…' : 'Save'} onClick={saveEdit} disabled={savingEdit || !left.trim() || !right.trim()} />
+              </div>
+            ) : (
+              <Btn kind="secondary" size="sm" label="Add spectrum" onClick={addSpectrum} disabled={!left.trim() || !right.trim()} />
+            )}
           </div>
         )}
 
@@ -615,7 +684,7 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
                 onPointerDown={(e) => handleRowPointerDown(s.id, e)}
                 onPointerMove={(e) => handleRowPointerMove(s.id, e)}
                 onPointerUp={() => handleRowPointerUp(s.id)}
-                onPointerCancel={() => handleRowPointerUp(s.id)}
+                onPointerCancel={() => handleRowPointerUp(s.id, false)}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'minmax(0,1fr) 56px minmax(0,1fr)',
@@ -625,7 +694,8 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
                   padding: '0 16px',
                   borderRadius: 999,
                   background: '#181038',
-                  border: '1px solid rgba(200,180,255,.08)',
+                  border: editingId === s.id ? '1px solid rgba(255,209,102,.6)' : '1px solid rgba(200,180,255,.08)',
+                  cursor: 'pointer',
                   position: 'relative',
                   touchAction: 'pan-y',
                   transform: `translateX(${draggingId === s.id ? liveOffset : openSpectrumId === s.id ? -SWIPE_REVEAL_PX : 0}px)`,

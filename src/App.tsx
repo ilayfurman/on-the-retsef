@@ -621,9 +621,12 @@ function Gate() {
               // party or packs attached, so dropping it loses nothing.
               if (isGuest && pendingAction.type === 'join') {
                 const code = pendingAction.roomCode
+                // Hash first (the sign-in screen reads the invite from it when
+                // it appears), route only once signed out — while the guest
+                // session is still live, route 'join' would be consumed again
+                // right away, clearing the hash before sign-in ever shows.
                 window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/join/${code}`)
-                setRoute({ name: 'join', roomCode: code })
-                void supabase.auth.signOut()
+                void supabase.auth.signOut().then(() => setRoute({ name: 'join', roomCode: code }))
               }
             }}
             onContinue={(name, chosenAvatar) =>

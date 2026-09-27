@@ -10,6 +10,8 @@ interface BtnProps {
   label: string
   onClick?: () => void
   disabled?: boolean
+  /** Inside a form a plain button submits it — pass 'button' when it shouldn't. */
+  type?: 'button' | 'submit'
 }
 
 const sizeMap: Record<Size, [number, number]> = {
@@ -45,7 +47,7 @@ const kindStyles: Record<Kind, CSSProperties> = {
   },
 }
 
-export function Btn({ kind, size, label, onClick, disabled }: BtnProps) {
+export function Btn({ kind, size, label, onClick, disabled, type }: BtnProps) {
   const [height, fontSize] = sizeMap[size]
 
   const buttonStyle: CSSProperties = {
@@ -70,6 +72,7 @@ export function Btn({ kind, size, label, onClick, disabled }: BtnProps) {
 
   return (
     <button
+      type={type}
       style={buttonStyle}
       onClick={handleClick}
       disabled={disabled}

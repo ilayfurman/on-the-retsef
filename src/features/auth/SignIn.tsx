@@ -1,5 +1,6 @@
-import { useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { supabase } from '../../lib/supabaseClient'
+import { checkRoom, invalidCodeMessage, readInviteHash, roomProblem } from '../party/roomStatus'
 import { Starfield } from '../../components/Starfield'
 import { Logo } from '../../components/Logo'
 import { Btn } from '../../components/Btn'
@@ -49,7 +50,13 @@ const backButtonStyle = {
   flex: 'none',
 }
 
-export function SignIn() {
+/**
+ * - default: email sign-in. Arriving from a party invite link (#/join/CODE)
+ *   adds "Continue as guest" — friends can play with just a name and avatar.
+ * - guestUpgrade: shown to a guest who's left the party they joined; hosting
+ *   a party or making packs needs a real account.
+ */
+export function SignIn({ mode = 'default', notice = null }: { mode?: 'default' | 'guestUpgrade'; notice?: string | null }) {
   const [email, setEmail] = useState('')
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''))
   const [codeSent, setCodeSent] = useState(false)
@@ -57,7 +64,30 @@ export function SignIn() {
   const digitRefs = useRef<Array<HTMLInputElement | null>>([])
   // Arrived from a friend's "Share link" (#/join/CODE)? Say so, so it's clear
   // signing in is a quick step on the way to their party, not a detour.
-  const [inviteCode] = useState(() => window.location.hash.match(/^#\/join\/([A-Z]{4})$/i)?.[1]?.toUpperCase() ?? null)
+  const [invite] = useState(readInviteHash)
+  const inviteCode = invite?.valid ? invite.code : null
+  const [guestBusy, setGuestBusy] = useState(false)
+  // The invited room is checked up front: a dead link says why, and nobody
+  // becomes a guest for a party they can't join. undefined = still checking.
+  const [roomIssue, setRoomIssue] = useState<string | null | undefined>(
+    invite && !invite.valid && mode === 'default' ? invalidCodeMessage(invite.code) : inviteCode ? undefined : null,
+  )
+  useEffect(() => {
+    if (!inviteCode || mode !== 'default') return
+    void checkRoom(inviteCode).then((status) => setRoomIssue(roomProblem(inviteCode, status)))
+  }, [inviteCode, mode])
+  const invited = mode === 'default' && inviteCode !== null && !roomIssue
+
+  async function continueAsGuest() {
+    setError(null)
+    setGuestBusy(true)
+    const { error } = await supabase.auth.signInAnonymously()
+    // On success the new session takes over (App carries on to the join step).
+    if (error) {
+      setError(/anonymous/i.test(error.message) ? "Guest play isn't available right now — sign in with your email instead." : error.message)
+      setGuestBusy(false)
+    }
+  }
 
   async function sendCode(e: FormEvent) {
     e.preventDefault()
@@ -140,23 +170,65 @@ export function SignIn() {
                 gap: 10,
               }}
             >
-              <div style={{ width: '100%', maxWidth: 190 }}>
-                <DialFan value={0.3} revealedTarget={0.64} />
-              </div>
-              <Logo variant="stacked" size="md" />
-              <p
-                style={{
-                  margin: 0,
-                  font: '400 16px/1.4 var(--font-body)',
-                  color: 'var(--text-muted)',
-                  textAlign: 'center',
-                }}
-              >
-                Give a clue. Guess the spot.
-                <br />
-                How close can you get?
-              </p>
-              {inviteCode && (
+              {mode === 'guestUpgrade' ? (
+                <>
+                  <Logo variant="stacked" size="md" />
+                  <h1 style={{ margin: '6px 0 0', font: '700 28px/1.15 var(--font-display)', color: 'var(--text)', textAlign: 'center' }}>
+                    Sign in to keep going
+                  </h1>
+                  <p style={{ margin: 0, font: '400 15px/1.45 var(--font-body)', color: 'var(--text-muted)', textAlign: 'center', maxWidth: 320 }}>
+                    You played as a guest. To host your own party or make packs, sign in with your email — it only takes a code. Got a new invite link? Just open it.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div style={{ width: '100%', maxWidth: invited ? 150 : 190 }}>
+                    <DialFan value={0.3} revealedTarget={0.64} />
+                  </div>
+                  <Logo variant="stacked" size="md" />
+                  {!invited && (
+                    <p
+                      style={{
+                        margin: 0,
+                        font: '400 16px/1.4 var(--font-body)',
+                        color: 'var(--text-muted)',
+                        textAlign: 'center',
+                      }}
+                    >
+                      Give a clue. Guess the spot.
+                      <br />
+                      How close can you get?
+                    </p>
+                  )}
+                </>
+              )}
+              {(roomIssue || (mode === 'guestUpgrade' && notice)) && (
+                <p
+                  role="alert"
+                  style={{
+                    margin: '4px 0 0',
+                    padding: '10px 14px',
+                    borderRadius: 16,
+                    background: 'rgba(255,111,163,.1)',
+                    border: '1px solid rgba(255,111,163,.4)',
+                    font: '500 14px/1.4 var(--font-body)',
+                    color: 'var(--text)',
+                    textAlign: 'center',
+                    maxWidth: 340,
+                  }}
+                >
+                  {roomIssue ?? notice}
+                </p>
+              )}
+              {/* Explains why sign-in is still offered when the invite is dead. */}
+              {mode === 'default' && roomIssue && (
+                <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 -4px' }}>
+                  <span style={{ flex: 1, height: 1, background: 'rgba(200,180,255,.16)' }} />
+                  <span style={{ font: '500 13px var(--font-body)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>or sign in to host your own party</span>
+                  <span style={{ flex: 1, height: 1, background: 'rgba(200,180,255,.16)' }} />
+                </div>
+              )}
+              {invited && (
                 <p
                   style={{
                     margin: '4px 0 0',
@@ -169,8 +241,20 @@ export function SignIn() {
                     textAlign: 'center',
                   }}
                 >
-                  You&rsquo;re invited to room <span style={{ color: 'var(--gold)', letterSpacing: '.08em' }}>{inviteCode}</span> &mdash; sign in to join
+                  You&rsquo;re invited to room <span style={{ color: 'var(--gold)', letterSpacing: '.08em' }}>{inviteCode}</span>
                 </p>
+              )}
+              {invited && (
+                <>
+                  <div style={{ width: '100%', marginTop: 6 }}>
+                    <Btn kind="primary" size="lg" type="button" label={guestBusy ? 'Joining…' : 'Continue as guest'} onClick={continueAsGuest} disabled={guestBusy || roomIssue === undefined} />
+                  </div>
+                  <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 -4px' }}>
+                    <span style={{ flex: 1, height: 1, background: 'rgba(200,180,255,.16)' }} />
+                    <span style={{ font: '500 13px var(--font-body)', color: 'var(--text-muted)' }}>or sign in to host parties &amp; use your packs</span>
+                    <span style={{ flex: 1, height: 1, background: 'rgba(200,180,255,.16)' }} />
+                  </div>
+                </>
               )}
               <input
                 id="email"
@@ -183,7 +267,7 @@ export function SignIn() {
                 style={{ ...pillInputStyle, width: '100%', marginTop: 8 }}
               />
               <div style={{ width: '100%' }}>
-                <Btn kind="primary" size="lg" label="Send code" />
+                <Btn kind={invited ? 'secondary' : 'primary'} size="lg" label="Send code" />
               </div>
             </div>
           </form>

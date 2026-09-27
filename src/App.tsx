@@ -6,6 +6,7 @@ import { Home } from './features/home/Home'
 import { NameAvatarStep } from './features/party/NameAvatarStep'
 import { createAndJoinParty } from './features/party/CreateParty'
 import { joinParty } from './features/party/JoinParty'
+import { checkRoom, invalidCodeMessage, readInviteHash, roomProblem } from './features/party/roomStatus'
 import { Lobby } from './features/party/Lobby'
 import { ShuffleReveal } from './features/party/ShuffleReveal'
 import { GameScreen } from './features/game/GameScreen'
@@ -250,6 +251,13 @@ function PartyRoom({
     }
   }, [status, hasStarted, teams.length])
 
+  // Warm the cache for the end-of-game drumroll while the game is on, so it
+  // starts right away when the final scoreboard appears.
+  useEffect(() => {
+    if (status !== 'playing' || !noisesEnabled) return
+    for (const f of ['drumroll', 'tada']) fetch(`/sounds/${f}.mp3`).catch(() => {})
+  }, [status, noisesEnabled])
+
   // A lone team is judged against a perfect game, so the final screen needs
   // how many turns were actually played. Fetched once at the end — turns are
   // deleted when the host reopens the lobby, so it's never refetched.
@@ -320,6 +328,7 @@ function PartyRoom({
           turnsPlayed={turnsPlayed}
           rounds={rounds}
           celebrate={celebrateEnd}
+          sound={noisesEnabled}
           onPlayAgain={async () => {
             const { error } = await supabase.rpc('confirm_rematch', { p_party_id: partyId })
             if (error) throw error
@@ -410,6 +419,7 @@ function PartyRoom({
           turnsPlayed={turnsPlayed}
           rounds={rounds}
           celebrate={celebrateEnd}
+          sound={noisesEnabled}
           endedReason={endedReason}
           onPlayAgain={async () => {
             const { error } = await supabase.rpc('confirm_rematch', { p_party_id: partyId })
@@ -462,10 +472,11 @@ function Gate() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [homeBusy, setHomeBusy] = useState<'create' | 'join' | null>(null)
   const [rehydrating, setRehydrating] = useState(true)
+  const [checkingInvite, setCheckingInvite] = useState(false)
 
   useEffect(() => {
-    const hash = window.location.hash.match(/^#\/join\/([A-Z]{4})$/i)
-    if (hash) setRoute({ name: 'join', roomCode: hash[1].toUpperCase() })
+    const invite = readInviteHash()
+    if (invite) setRoute({ name: 'join', roomCode: invite.code })
   }, [])
 
   // A "Share link" points at #/join/CODE, but a guest who isn't signed in yet
@@ -475,11 +486,24 @@ function Gate() {
   // stranding them on Home to find and retype the code by hand. Consumed
   // once: route flips to 'home' and the hash is cleared, so Back or a
   // refresh doesn't re-trigger the same prompt.
+  // The room is checked first, so a dead link says why (no such room, game
+  // already started, party over) instead of failing silently at "Join party".
   useEffect(() => {
     if (route.name !== 'join' || loading || rehydrating || !session) return
-    setPendingAction({ type: 'join', roomCode: route.roomCode })
+    const code = route.roomCode
     setRoute({ name: 'home' })
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    if (!/^[A-Z]{4}$/.test(code)) {
+      setJoinError(invalidCodeMessage(code))
+      return
+    }
+    setCheckingInvite(true)
+    void checkRoom(code).then((status) => {
+      const problem = roomProblem(code, status)
+      if (problem) setJoinError(problem)
+      else setPendingAction({ type: 'join', roomCode: code })
+      setCheckingInvite(false)
+    })
   }, [route, loading, rehydrating, session])
 
   // Recover "which party am I in" after a page reload — route state otherwise
@@ -538,9 +562,10 @@ function Gate() {
     }
   }, [session, loading])
 
+  const isGuest = !!session?.user.is_anonymous
   if (loading) return <div data-testid="app-root"><Splash /></div>
   if (!session) return <div data-testid="app-root"><SignIn /></div>
-  if (rehydrating) return <div data-testid="app-root"><Splash /></div>
+  if (rehydrating || checkingInvite) return <div data-testid="app-root"><Splash /></div>
 
   async function handleCreate(name: string, chosenAvatar: string) {
     setDisplayName(name)
@@ -567,7 +592,8 @@ function Gate() {
       setPendingAction(null)
       setRoute({ name: 'lobby', partyId: player.party_id, roomCode, isHost: false })
     } catch (err) {
-      setJoinError(errorMessage(err, 'Could not join that room. Check the code and try again.'))
+      const msg = errorMessage(err, 'Could not join that room. Check the code and try again.')
+      setJoinError(/no open party/i.test(msg) ? `Room ${roomCode} isn't open — check the code, or the game may have already started.` : msg)
     } finally {
       setHomeBusy(null)
     }
@@ -576,13 +602,30 @@ function Gate() {
   return (
     <div data-testid="app-root">
       {route.name === 'home' || route.name === 'join' ? (
-        pendingAction ? (
+        // Guests (joined from an invite link, no email) only get to be in
+        // parties; anywhere else asks them to sign in for real.
+        isGuest && !pendingAction ? (
+          <SignIn mode="guestUpgrade" notice={joinError} />
+        ) : pendingAction ? (
           <NameAvatarStep
             initialName={displayName}
             initialAvatar={avatar}
             title={pendingAction.type === 'create' ? 'Who are you tonight?' : `Joining ${pendingAction.roomCode}`}
             continueLabel={pendingAction.type === 'create' ? 'Create party' : 'Join party'}
-            onBack={() => setPendingAction(null)}
+            onBack={() => {
+              setPendingAction(null)
+              setJoinError(null)
+              // A guest backing out of an invite hasn't joined anything yet —
+              // return them to the invite screen (guest or sign in), not the
+              // "sign in to keep going" wall. Their guest session has no
+              // party or packs attached, so dropping it loses nothing.
+              if (isGuest && pendingAction.type === 'join') {
+                const code = pendingAction.roomCode
+                window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/join/${code}`)
+                setRoute({ name: 'join', roomCode: code })
+                void supabase.auth.signOut()
+              }
+            }}
             onContinue={(name, chosenAvatar) =>
               pendingAction.type === 'create'
                 ? handleCreate(name, chosenAvatar)
@@ -593,17 +636,18 @@ function Gate() {
           <>
             <Home
               email={session.user.email}
-              onCreate={() => setPendingAction({ type: 'create' })}
-              onJoin={(code) => setPendingAction({ type: 'join', roomCode: code })}
+              onCreate={() => {
+                setJoinError(null)
+                setPendingAction({ type: 'create' })
+              }}
+              onJoin={(code) => {
+                setJoinError(null)
+                setPendingAction({ type: 'join', roomCode: code })
+              }}
               onOpenPacks={() => setRoute({ name: 'packs' })}
               onSignOut={() => supabase.auth.signOut()}
               busy={homeBusy}
             />
-            {joinError && (
-              <p role="alert" style={{ position: 'fixed', bottom: 16, left: 0, right: 0, textAlign: 'center', color: 'var(--comets)', fontFamily: 'var(--font-body)', fontSize: 14 }}>
-                {joinError}
-              </p>
-            )}
           </>
         )
       ) : route.name === 'packs' ? (
@@ -617,6 +661,33 @@ function Gate() {
           isHost={route.isHost}
           onBackToHome={() => setRoute({ name: 'home' })}
         />
+      )}
+      {/* Join problems show on Home and on the name/avatar step alike (a
+          failed "Join party" used to be invisible there). A guest sees it on
+          their own screen instead. */}
+      {joinError && (route.name === 'home' || route.name === 'join') && !(isGuest && !pendingAction) && (
+        <p
+          role="alert"
+          style={{
+            position: 'fixed',
+            bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
+            left: 16,
+            right: 16,
+            maxWidth: 440,
+            margin: '0 auto',
+            padding: '12px 16px',
+            borderRadius: 16,
+            background: 'rgba(40, 18, 44, .92)',
+            border: '1px solid rgba(255,111,163,.45)',
+            boxShadow: '0 10px 30px rgba(0,0,0,.35)',
+            textAlign: 'center',
+            color: 'var(--text)',
+            font: '500 14px/1.4 var(--font-body)',
+            zIndex: 60,
+          }}
+        >
+          {joinError}
+        </p>
       )}
     </div>
   )

@@ -31,6 +31,10 @@ type Player = { id: string; display_name: string; avatar: string; team_id?: stri
  */
 
 const INTRO_MS = 750
+// The drumroll's final hit lands 3.58s in (public/sounds/drumroll.mp3), so the
+// race is timed to top out exactly on it, with the ta-da layered on top.
+const DRUM_HIT_MS = 3580
+const COUNT_MS = DRUM_HIT_MS - INTRO_MS
 const CROWN_DELAY_MS = 140
 const CROWN_FALL_MS = 420
 const BUTTONS_AFTER_MS = 1000
@@ -53,10 +57,6 @@ type Lane = {
   isWinner: boolean
   /** Final bar fill, 0..1 of the lane's height. */
   f: number
-}
-
-function countDuration(maxScore: number) {
-  return Math.max(1600, Math.min(3400, 1300 + 110 * maxScore))
 }
 
 /** The shared points clock: steady climb, easing off near the top so the
@@ -191,6 +191,7 @@ export function FinalScoreboard({
   turnsPlayed = null,
   rounds = null,
   celebrate = false,
+  sound = false,
   onPlayAgain,
   onLeave,
   endedReason,
@@ -204,6 +205,8 @@ export function FinalScoreboard({
   rounds?: number | null
   /** This client just watched the game end — play the show. */
   celebrate?: boolean
+  /** Drumroll + ta-da with the show (the party's sound setting). */
+  sound?: boolean
   onPlayAgain: () => void
   onLeave: () => void
   /** Set when the game was cut short rather than reaching its natural end — e.g. 'player_left' left a team below 2 players. */
@@ -276,23 +279,39 @@ export function FinalScoreboard({
 
   // Snapshot for the one-shot animation loop (the show runs on the result
   // as it stood when the game ended).
-  const show = useRef({ lanes, single, soloMax, maxScore, tier: level.tier, tie })
+  const show = useRef({ lanes, single, soloMax, maxScore, tier: level.tier, tie, sound })
 
   useEffect(() => {
     if (!animate) return
     const S = show.current
     const scale = S.single ? S.soloMax : Math.max(1, S.maxScore)
     const top = S.single ? S.lanes[0].team.score : S.maxScore
-    const D = countDuration(top)
+    const D = COUNT_MS
     const impactAt = INTRO_MS + D
     const lands = S.lanes.map((l) => (l.isWinner || S.single ? impactAt : INTRO_MS + landU(l.team.score, top) * D))
     const landed = S.lanes.map(() => false)
     const levelLit = LEVELS.map(() => false)
-    let start = performance.now()
+    // null until the show starts: on the drumroll's first beat when there's
+    // sound (so a slow load can't knock the final hit out of sync), else now.
+    let start: number | null = S.sound ? null : performance.now()
     let raf = 0
     let impacted = false
     let buttonsShown = false
     const nextSparkle = { at: 0 }
+    // The show starts on the drumroll's first beat. Missing audio (blocked
+    // autoplay, slow network) just means a silent show.
+    const drum = S.sound ? new Audio('/sounds/drumroll.mp3') : null
+    const tada = S.sound ? new Audio('/sounds/tada.mp3') : null
+    tada?.load()
+    const begin = () => {
+      if (start === null) start = performance.now()
+    }
+    let fallback: ReturnType<typeof setTimeout> | undefined
+    if (drum) {
+      drum.addEventListener('playing', begin, { once: true })
+      drum.play()?.catch(begin)
+      fallback = setTimeout(begin, 700)
+    }
 
     function laneTopPoint(i: number) {
       const r = barRefs.current[i]?.getBoundingClientRect()
@@ -328,9 +347,14 @@ export function FinalScoreboard({
     }
 
     function frame(now: number) {
+      if (start === null) {
+        raf = requestAnimationFrame(frame)
+        return
+      }
       if (skipRef.current && now - start < impactAt) {
         start = now - impactAt
         skipRef.current = false
+        drum?.pause()
       }
       const t = now - start
       const pts = t < INTRO_MS ? 0 : pointsAt((t - INTRO_MS) / D, top)
@@ -401,6 +425,7 @@ export function FinalScoreboard({
       if (!impacted && t >= impactAt) {
         impacted = true
         setPhase('won')
+        tada?.play()?.catch(() => {})
         onImpact()
         nextSparkle.at = t + 1600
       }
@@ -421,7 +446,12 @@ export function FinalScoreboard({
       if (t < impactAt + LOOP_TAIL_MS) raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(fallback)
+      drum?.pause()
+      tada?.pause()
+    }
   }, [animate])
 
   const n = Math.max(1, lanes.length)

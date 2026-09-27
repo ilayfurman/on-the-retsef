@@ -221,6 +221,11 @@ export function Lobby({
   // producing "the reveal only showed for the host". Diffing within one
   // atomic event can't race against a separate fetch the same way.
   const [shuffleRequestId, setShuffleRequestId] = useState(0)
+  // Which shuffle's result `teams`/`players` are known to reflect. On a
+  // reshuffle the OLD teams are still loaded when the reveal starts, so the
+  // reveal must wait for this to match shuffleRequestId rather than just
+  // "teams exist" — otherwise a slow network could reveal stale teams.
+  const [revealReadyFor, setRevealReadyFor] = useState<number | null>(null)
   const [shuffling, setShuffling] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Full-screen animated reveal shown while/after shuffling — purely a local
@@ -384,9 +389,14 @@ export function Lobby({
       // not a "change" to react to.
       if (!isHostRef.current) {
         if (lastKnownNonceRef.current !== null && data.shuffle_nonce !== lastKnownNonceRef.current) {
+          const nonce = data.shuffle_nonce
           setStartRects(captureAvatarRects())
-          setShuffleRequestId(data.shuffle_nonce)
+          setShuffleRequestId(nonce)
+          setRevealReadyFor(null)
           setRevealOpen(true)
+          // The nonce is bumped inside shuffle_teams itself, so a fetch issued
+          // after seeing it is guaranteed to read the new teams.
+          void Promise.all([loadTeams(), loadPlayers()]).then(() => setRevealReadyFor(nonce))
         }
         lastKnownNonceRef.current = data.shuffle_nonce
       }
@@ -471,8 +481,10 @@ export function Lobby({
   }, [partyId, isHost])
 
   async function reshuffle() {
+    const req = Date.now()
     setStartRects(captureAvatarRects())
-    setShuffleRequestId(Date.now())
+    setShuffleRequestId(req)
+    setRevealReadyFor(null)
     setShuffling(true)
     setRevealOpen(true)
     try {
@@ -481,6 +493,7 @@ export function Lobby({
       // explicitly so the acting client's own view is guaranteed correct
       // even if that delivery is delayed or missed.
       await Promise.all([loadTeams(), loadPlayers()])
+      setRevealReadyFor(req)
       setShuffleVersion((v) => v + 1)
     } finally {
       setShuffling(false)
@@ -547,8 +560,10 @@ export function Lobby({
   }
 
   async function shuffleAndReveal() {
+    const req = Date.now()
     setStartRects(captureAvatarRects())
-    setShuffleRequestId(Date.now())
+    setShuffleRequestId(req)
+    setRevealReadyFor(null)
     setStartError(null)
     setShuffling(true)
     setRevealOpen(true)
@@ -559,6 +574,7 @@ export function Lobby({
       // explicitly so the acting client's own view is guaranteed correct
       // even if that delivery is delayed or missed.
       await Promise.all([loadTeams(), loadPlayers()])
+      setRevealReadyFor(req)
       setShuffleVersion((v) => v + 1)
     } catch (err) {
       setStartError(errorMessage(err, 'Could not shuffle teams. Try again.'))
@@ -1603,6 +1619,7 @@ export function Lobby({
         myTeamId={myTeamId}
         canAct={isHost}
         skipAnimation={forcedSingleTeam}
+        resultsReady={revealReadyFor === shuffleRequestId}
         onStartGame={handleStartGame}
         onReshuffle={reshuffle}
         onDismiss={() => setRevealOpen(false)}

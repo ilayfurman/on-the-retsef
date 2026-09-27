@@ -233,10 +233,10 @@ function PartyRoom({
     // party's actual first game, not a rematch reusing the same team.
     if (status === 'playing' && prevStatus === 'lobby' && !prevHasStarted && teams.length === 1) {
       setQuickRevealActive(true)
-      // ~950ms closed-curtain suspense + ~900ms curtain-lift for a single
-      // box (see ShuffleReveal's swap/reveal timing) + a further 1000ms
-      // holding on the revealed team before moving on to the game.
-      const timer = setTimeout(() => setQuickRevealActive(false), 2900)
+      // ShuffleReveal's single-team "huddle" runs ~3.1s (run in, 1-2-3
+      // chant, TEAM! jump, hop into the box), then a ~0.9s beat on the
+      // result before moving on to the game.
+      const timer = setTimeout(() => setQuickRevealActive(false), 4000)
       return () => clearTimeout(timer)
     }
   }, [status, hasStarted, teams.length])
@@ -565,12 +565,20 @@ function Gate() {
 // Dev-only reveal FX playground (see RevealPreview). import.meta.env.DEV is
 // statically false in production builds, so this whole import is dropped.
 const RevealPreview = import.meta.env.DEV ? lazy(() => import('./features/dev/RevealPreview')) : null
+const ShufflePreview = import.meta.env.DEV ? lazy(() => import('./features/dev/ShufflePreview')) : null
 
 export default function App() {
   if (RevealPreview && window.location.hash === '#/fx-preview') {
     return (
       <Suspense fallback={null}>
         <RevealPreview />
+      </Suspense>
+    )
+  }
+  if (ShufflePreview && window.location.hash.startsWith('#/shuffle-preview')) {
+    return (
+      <Suspense fallback={null}>
+        <ShufflePreview />
       </Suspense>
     )
   }

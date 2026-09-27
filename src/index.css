@@ -89,3 +89,33 @@ body {
 @keyframes reroll-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Team-o-Matic shuffle (ShuffleReveal) ── */
+@keyframes title-wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes title-pop {
+  0% { opacity: 0; transform: translateY(10px) scale(.4); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes slot-land {
+  0% { transform: scale(.3); }
+  55% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+@keyframes slot-wait {
+  0%, 100% { opacity: .35; transform: scale(.94); }
+  50% { opacity: .8; transform: scale(1); }
+}
+@keyframes badge-pop {
+  0% { opacity: 0; transform: translateX(-50%) translateY(6px) scale(.3); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.tom-glint {
+  animation: tom-glint 3.2s ease-in-out infinite;
+}
+@keyframes tom-glint {
+  0%, 55% { transform: translateX(0); }
+  100% { transform: translateX(320px); }
+}

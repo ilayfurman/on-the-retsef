@@ -76,6 +76,24 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
   const [replaceError, setReplaceError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [shareState, setShareState] = useState<'copied' | null>(null)
+  // Tap the name to edit it; saves on Enter or when leaving the field.
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameError, setRenameError] = useState<string | null>(null)
+
+  async function saveName() {
+    if (renaming === null || !pack) return
+    const name = renaming.trim()
+    setRenaming(null)
+    if (!name || name === pack.name) return
+    const previous = pack.name
+    setPack({ ...pack, name })
+    setRenameError(null)
+    const { error } = await supabase.rpc('rename_pack', { p_pack_id: pack.id, p_name: name })
+    if (error) {
+      setPack((p) => (p ? { ...p, name: previous } : p))
+      setRenameError(errorMessage(error, 'Could not rename this pack. Try again.'))
+    }
+  }
   const [deletePackConfirm, setDeletePackConfirm] = useState(false)
   const [deletingPack, setDeletingPack] = useState(false)
   const [deletePackError, setDeletePackError] = useState<string | null>(null)
@@ -280,9 +298,62 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
               ‹
             </button>
           )}
-          <span style={{ flex: 1, font: '700 24px/1 var(--font-body)', color: 'var(--text)' }}>
-            {pack?.name ?? 'Pack editor'}
-          </span>
+          {renaming !== null ? (
+            <input
+              autoFocus
+              aria-label="Pack name"
+              value={renaming}
+              maxLength={40}
+              onChange={(e) => setRenaming(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={saveName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') setRenaming(null)
+              }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 42,
+                borderRadius: 14,
+                background: 'var(--input-bg)',
+                border: '1px solid rgba(255,209,102,.5)',
+                padding: '0 12px',
+                color: 'var(--text)',
+                font: '700 20px/1 var(--font-body)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          ) : (
+            <button
+              onClick={() => pack && setRenaming(pack.name)}
+              aria-label="Rename pack"
+              disabled={!pack}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: pack ? 'pointer' : 'default',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{ font: '700 24px/1.1 var(--font-body)', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {pack?.name ?? 'Pack editor'}
+              </span>
+              {pack && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: 'none' }}>
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              )}
+            </button>
+          )}
           {pack?.share_code && (
             <button
               onClick={async () => {
@@ -312,6 +383,11 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
             </button>
           )}
         </div>
+        {renameError && (
+          <p role="alert" style={{ margin: 0, color: 'var(--comets)', font: '500 13px var(--font-body)' }}>
+            {renameError}
+          </p>
+        )}
 
         <div
           style={{

@@ -11,16 +11,6 @@ type Pack = { id: string; name: string; share_code: string; card_count?: number 
 // a normal tap-to-open never fires it by accident.
 const LONG_PRESS_MS = 550
 
-const codePillStyle = {
-  padding: '8px 12px',
-  borderRadius: 999,
-  background: 'rgba(8,6,24,.6)',
-  border: '1px solid rgba(200,180,255,.14)',
-  font: '700 13px/1 var(--font-mono)',
-  letterSpacing: '.12em',
-  color: 'var(--gold)',
-}
-
 export function PacksList({
   onOpenPack,
   onBack,
@@ -30,7 +20,6 @@ export function PacksList({
 }) {
   const [packs, setPacks] = useState<Pack[]>([])
   const [starterCount, setStarterCount] = useState<number | null>(null)
-  const [addCode, setAddCode] = useState('')
   const [newName, setNewName] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
@@ -208,57 +197,13 @@ export function PacksList({
                 {p.card_count ?? 0} cards
               </span>
             </div>
-            <span style={codePillStyle}>{p.share_code}</span>
             <span style={{ font: '500 20px/1 var(--font-body)', color: 'var(--text-muted)' }}>›</span>
           </button>
         ))}
 
-        <div
-          style={{
-            borderRadius: 22,
-            padding: 14,
-            background: 'rgba(255,255,255,.03)',
-            border: '1px dashed rgba(200,180,255,.2)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
-          <span style={{ font: '600 11px/1 var(--font-body)', letterSpacing: '.16em', color: 'var(--text-muted)' }}>
-            ADD A FRIEND'S PACK
-          </span>
-          <p style={{ margin: 0, font: '400 13px/1.4 var(--font-body)', color: 'var(--text-muted)' }}>
-            Coming soon — for now, a host can attach a friend's pack by code from the lobby.
-          </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={addCode}
-              onChange={(e) => setAddCode(e.target.value.toUpperCase())}
-              placeholder="Share code"
-              aria-label="Share code"
-              disabled
-              style={{
-                flex: 1,
-                minWidth: 0,
-                height: 50,
-                borderRadius: 999,
-                background: 'var(--input-bg)',
-                border: '1px solid var(--input-border)',
-                padding: '0 18px',
-                color: 'var(--text)',
-                font: '600 16px/1 var(--font-mono)',
-                letterSpacing: '.14em',
-                outline: 'none',
-                textTransform: 'uppercase',
-                boxSizing: 'border-box',
-                opacity: 0.5,
-              }}
-            />
-            <div style={{ width: 84 }}>
-              <Btn kind="accent" size="sm" label="Add" disabled />
-            </div>
-          </div>
-        </div>
+        <p style={{ margin: '2px 6px 0', font: '400 13px/1.45 var(--font-body)', color: 'var(--text-muted)' }}>
+          Want to give a friend one of your packs? Open it and tap <strong style={{ color: 'var(--text)', fontWeight: 600 }}>Share</strong> — they get their own copy to play with and edit.
+        </p>
 
         <div style={{ flex: 1 }} />
 

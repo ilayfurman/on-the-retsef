@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { checkRoom, invalidCodeMessage, readInviteHash, roomProblem } from '../party/roomStatus'
+import { fetchPackPreview, readPackHash } from '../packs/packLinks'
 import { Starfield } from '../../components/Starfield'
 import { Logo } from '../../components/Logo'
 import { Btn } from '../../components/Btn'
@@ -77,6 +78,16 @@ export function SignIn({ mode = 'default', notice = null }: { mode?: 'default' |
     void checkRoom(inviteCode).then((status) => setRoomIssue(roomProblem(inviteCode, status)))
   }, [inviteCode, mode])
   const invited = mode === 'default' && inviteCode !== null && !roomIssue
+  // Arrived from a pack share link (#/pack/CODE)? Name the pack, so signing
+  // in reads as the step to getting it.
+  const [packCode] = useState(() => (mode === 'default' ? readPackHash() : null))
+  const [packName, setPackName] = useState<string | null>(null)
+  useEffect(() => {
+    if (!packCode) return
+    fetchPackPreview(packCode)
+      .then((p) => setPackName(p?.name ?? null))
+      .catch(() => {})
+  }, [packCode])
 
   async function continueAsGuest() {
     setError(null)
@@ -186,7 +197,7 @@ export function SignIn({ mode = 'default', notice = null }: { mode?: 'default' |
                     <DialFan value={0.3} revealedTarget={0.64} />
                   </div>
                   <Logo variant="stacked" size="md" />
-                  {!invited && (
+                  {!invited && !packCode && (
                     <p
                       style={{
                         margin: 0,
@@ -227,6 +238,24 @@ export function SignIn({ mode = 'default', notice = null }: { mode?: 'default' |
                   <span style={{ font: '500 13px var(--font-body)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>or sign in to host your own party</span>
                   <span style={{ flex: 1, height: 1, background: 'rgba(200,180,255,.16)' }} />
                 </div>
+              )}
+              {packCode && (
+                <p
+                  style={{
+                    margin: '4px 0 0',
+                    padding: '8px 14px',
+                    borderRadius: 16,
+                    background: 'rgba(255,209,102,.12)',
+                    border: '1px solid rgba(255,209,102,.35)',
+                    font: '600 14px/1.35 var(--font-body)',
+                    color: 'var(--text)',
+                    textAlign: 'center',
+                  }}
+                >
+                  🃏 A friend shared {packName ? <span style={{ color: 'var(--gold)' }}>&ldquo;{packName}&rdquo;</span> : 'a pack'} with you
+                  <br />
+                  <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>Sign in to add it to your packs</span>
+                </p>
               )}
               {invited && (
                 <p

@@ -5,6 +5,7 @@ import { Starfield } from '../../components/Starfield'
 import { Btn } from '../../components/Btn'
 import { parsePasteLines } from './pasteImport'
 import { AiPromptSheet } from './AiPromptSheet'
+import { sharePack } from './packLinks'
 import { errorMessage } from '../../lib/errorMessage'
 
 type Pack = { id: string; name: string; share_code: string }
@@ -74,6 +75,7 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
   const [replaceResult, setReplaceResult] = useState<{ removed: number; added: number; skipped: number } | null>(null)
   const [replaceError, setReplaceError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [shareState, setShareState] = useState<'copied' | null>(null)
   const [deletePackConfirm, setDeletePackConfirm] = useState(false)
   const [deletingPack, setDeletingPack] = useState(false)
   const [deletePackError, setDeletePackError] = useState<string | null>(null)
@@ -282,19 +284,32 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
             {pack?.name ?? 'Pack editor'}
           </span>
           {pack?.share_code && (
-            <span
+            <button
+              onClick={async () => {
+                const result = await sharePack(pack.share_code, pack.name)
+                setShareState(result === 'copied' ? 'copied' : null)
+                if (result === 'copied') setTimeout(() => setShareState(null), 2200)
+              }}
               style={{
-                padding: '8px 12px',
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '9px 14px',
                 borderRadius: 999,
                 background: 'rgba(255,209,102,.12)',
                 border: '1px solid rgba(255,209,102,.4)',
-                font: '700 13px/1 var(--font-mono)',
-                letterSpacing: '.12em',
+                font: '700 14px/1 var(--font-body)',
                 color: 'var(--gold)',
+                cursor: 'pointer',
               }}
             >
-              {pack.share_code}
-            </span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 3v12M7 8l5-5 5 5" />
+                <path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+              </svg>
+              {shareState === 'copied' ? 'Link copied!' : 'Share'}
+            </button>
           )}
         </div>
 

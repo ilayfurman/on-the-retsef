@@ -14,6 +14,8 @@ import { FinalScoreboard } from './features/game/FinalScoreboard'
 import { RematchWaiting } from './features/game/RematchWaiting'
 import { PacksList } from './features/packs/PacksList'
 import { PackEditor } from './features/packs/PackEditor'
+import { PackInvite } from './features/packs/PackInvite'
+import { readPackHash } from './features/packs/packLinks'
 import { supabase } from './lib/supabaseClient'
 import { errorMessage } from './lib/errorMessage'
 import { Starfield } from './components/Starfield'
@@ -25,6 +27,7 @@ type Route =
   | { name: 'lobby'; partyId: string; roomCode: string; isHost: boolean }
   | { name: 'packs' }
   | { name: 'packEditor'; packId: string }
+  | { name: 'packInvite'; shareCode: string }
 
 function Splash() {
   return (
@@ -434,6 +437,10 @@ function PartyRoom({
   return <Splash />
 }
 
+function clearHash() {
+  window.history.replaceState(null, '', window.location.pathname + window.location.search)
+}
+
 // A per-viewer convenience only (never read back by the server or other
 // players) — if it's unavailable (private browsing, blocked storage) the
 // screen just falls back to generic defaults, which is fine.
@@ -477,6 +484,8 @@ function Gate() {
   useEffect(() => {
     const invite = readInviteHash()
     if (invite) setRoute({ name: 'join', roomCode: invite.code })
+    const packCode = readPackHash()
+    if (packCode) setRoute({ name: 'packInvite', shareCode: packCode })
   }, [])
 
   // A "Share link" points at #/join/CODE, but a guest who isn't signed in yet
@@ -543,7 +552,8 @@ function Gate() {
       // An invite link for a *different* room wins over auto-rejoining an
       // old one — clicking a friend's link should take you to their party.
       const linkCode = window.location.hash.match(/^#\/join\/([A-Z]{4})$/i)?.[1]?.toUpperCase()
-      if (active && active.parties && (!linkCode || linkCode === active.parties.room_code.toUpperCase())) {
+      // Likewise a pack link: show the pack, don't drop them into a lobby.
+      if (active && active.parties && !readPackHash() && (!linkCode || linkCode === active.parties.room_code.toUpperCase())) {
         if (linkCode) window.history.replaceState(null, '', window.location.pathname + window.location.search)
         setDisplayName(active.display_name)
         setAvatar(active.avatar)
@@ -655,6 +665,22 @@ function Gate() {
         )
       ) : route.name === 'packs' ? (
         <PacksList onOpenPack={(packId) => setRoute({ name: 'packEditor', packId })} onBack={() => setRoute({ name: 'home' })} />
+      ) : route.name === 'packInvite' ? (
+        isGuest ? (
+          <SignIn mode="guestUpgrade" notice="Packs live in your account — sign in to add this one." />
+        ) : (
+          <PackInvite
+            shareCode={route.shareCode}
+            onOpenPack={(packId) => {
+              clearHash()
+              setRoute({ name: 'packEditor', packId })
+            }}
+            onDone={() => {
+              clearHash()
+              setRoute({ name: 'home' })
+            }}
+          />
+        )
       ) : route.name === 'packEditor' ? (
         <PackEditor packId={route.packId} onBack={() => setRoute({ name: 'packs' })} />
       ) : (

@@ -202,7 +202,6 @@ export function Lobby({
   const [packSpectrumCounts, setPackSpectrumCounts] = useState<Record<string, number>>({})
   const [myPacks, setMyPacks] = useState<{ id: string; name: string; share_code: string }[]>([])
   const [packsExpanded, setPacksExpanded] = useState(false)
-  const [packCodeInput, setPackCodeInput] = useState('')
   const [packBusy, setPackBusy] = useState(false)
   const [packError, setPackError] = useState<string | null>(null)
   const [removePackConfirm, setRemovePackConfirm] = useState<{ id: string; name: string; remaining: number } | null>(null)
@@ -352,13 +351,14 @@ export function Lobby({
   }
 
   async function addPackByCode(code: string) {
+    // Attaches one of the host's own packs (or Starter) — the lobby no longer
+    // takes a friend's code; friends share packs as copies instead.
     if (!code.trim()) return
     setPackBusy(true)
     setPackError(null)
     try {
       const { error } = await supabase.rpc('add_pack_by_code', { p_party_id: partyId, p_share_code: code.trim().toUpperCase() })
       if (error) throw error
-      setPackCodeInput('')
       await loadAttachedPacks()
     } catch (err) {
       setPackError(errorMessage(err, 'Could not add that pack. Check the code and try again.'))
@@ -1478,32 +1478,6 @@ export function Lobby({
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
-                    <input
-                      value={packCodeInput}
-                      onChange={(e) => setPackCodeInput(e.target.value.toUpperCase())}
-                      placeholder="Friend's share code"
-                      aria-label="Friend's share code"
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        height: 40,
-                        borderRadius: 999,
-                        background: 'var(--input-bg)',
-                        border: '1px solid var(--input-border)',
-                        padding: '0 14px',
-                        color: 'var(--text)',
-                        font: '600 14px/1 var(--font-mono)',
-                        letterSpacing: '.1em',
-                        outline: 'none',
-                        boxSizing: 'border-box',
-                        textTransform: 'uppercase',
-                      }}
-                    />
-                    <div style={{ width: 84 }}>
-                      <Btn kind="accent" size="sm" label={packBusy ? '…' : 'Add'} onClick={() => addPackByCode(packCodeInput)} disabled={packBusy || !packCodeInput.trim()} />
-                    </div>
-                  </div>
                 </div>
               )}
 

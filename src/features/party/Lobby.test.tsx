@@ -11,8 +11,14 @@ function makeChain(resolveValue: unknown, arrayValue?: unknown) {
   const chain: Record<string, unknown> = {}
   chain.select = vi.fn(() => chain)
   chain.eq = vi.fn(() => chain)
+  chain.or = vi.fn(() => chain)
   chain.order = vi.fn(() => Promise.resolve(arrayValue !== undefined ? arrayValue : resolveValue))
   chain.single = vi.fn(() => Promise.resolve(resolveValue))
+  // Real supabase-js query builders are themselves thenable, so code can
+  // `await` the chain directly without calling a terminal method like
+  // `.single()`/`.order()` first (e.g. `.select(...).or(...)`) — mirror that
+  // here instead of hardcoding which method ends every chain in this mock.
+  chain.then = (resolve: (value: unknown) => void) => resolve(arrayValue !== undefined ? arrayValue : resolveValue)
   return chain
 }
 

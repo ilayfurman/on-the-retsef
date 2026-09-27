@@ -1,9 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { Starfield } from '../../components/Starfield'
 import { Btn } from '../../components/Btn'
+import { errorMessage } from '../../lib/errorMessage'
 
 type Pack = { id: string; name: string; share_code: string; card_count?: number }
+
+// Long-press (touch and hold, or click-and-hold on desktop) opens the
+// delete confirmation — short enough to not feel sluggish, long enough that
+// a normal tap-to-open never fires it by accident.
+const LONG_PRESS_MS = 550
 
 const codePillStyle = {
   padding: '8px 12px',
@@ -23,15 +29,21 @@ export function PacksList({
   onBack?: () => void
 }) {
   const [packs, setPacks] = useState<Pack[]>([])
+  const [starterCount, setStarterCount] = useState<number | null>(null)
   const [addCode, setAddCode] = useState('')
   const [newName, setNewName] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressFiredRef = useRef(false)
 
   async function loadPacks() {
     const userId = (await supabase.auth.getUser()).data.user?.id
-    const { data } = await supabase
-      .from('packs')
-      .select('id, name, share_code, spectrums(count)')
-      .eq('owner_id', userId)
+    const [{ data }, { data: starterRows }] = await Promise.all([
+      supabase.from('packs').select('id, name, share_code, spectrums(count)').eq('owner_id', userId),
+      supabase.from('packs').select('spectrums(count)').eq('share_code', 'STARTER'),
+    ])
     setPacks(
       ((data as (Pack & { spectrums?: { count: number }[] })[]) ?? []).map((p) => ({
         id: p.id,
@@ -40,6 +52,7 @@ export function PacksList({
         card_count: p.spectrums?.[0]?.count ?? 0,
       }))
     )
+    setStarterCount((starterRows as { spectrums?: { count: number }[] }[] | null)?.[0]?.spectrums?.[0]?.count ?? 0)
   }
 
   useEffect(() => {
@@ -51,6 +64,44 @@ export function PacksList({
     setNewName('')
     await loadPacks()
     if (data) onOpenPack((data as Pack).id)
+  }
+
+  function startLongPress(p: Pack) {
+    longPressFiredRef.current = false
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true
+      setDeleteConfirm({ id: p.id, name: p.name })
+    }, LONG_PRESS_MS)
+  }
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+  }
+
+  // A long press already opened the confirm dialog — the click that follows
+  // releasing the press must not also navigate into the pack.
+  function handlePackClick(p: Pack) {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false
+      return
+    }
+    onOpenPack(p.id)
+  }
+
+  async function confirmDeletePack() {
+    if (!deleteConfirm) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      const { error } = await supabase.rpc('delete_pack', { p_pack_id: deleteConfirm.id })
+      if (error) throw error
+      setDeleteConfirm(null)
+      await loadPacks()
+    } catch (err) {
+      setDeleteError(errorMessage(err, 'Could not delete this pack. Try again.'))
+    } finally {
+      setDeleteBusy(false)
+    }
   }
 
   return (
@@ -107,7 +158,7 @@ export function PacksList({
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
             <span style={{ font: '700 18px/1 var(--font-body)', color: 'var(--text)' }}>Starter deck</span>
             <span style={{ font: '400 13px/1 var(--font-body)', color: 'var(--text-muted)' }}>
-              100 cards · always included
+              {starterCount ?? '…'} cards · always included
             </span>
           </div>
           <span
@@ -124,10 +175,19 @@ export function PacksList({
           </span>
         </div>
 
+        {packs.length > 0 && (
+          <span style={{ font: '400 12px/1 var(--font-body)', color: 'var(--text-subtle)', padding: '0 4px' }}>
+            Press and hold a pack to delete it
+          </span>
+        )}
         {packs.map((p) => (
           <button
             key={p.id}
-            onClick={() => onOpenPack(p.id)}
+            onClick={() => handlePackClick(p)}
+            onPointerDown={() => startLongPress(p)}
+            onPointerUp={cancelLongPress}
+            onPointerLeave={cancelLongPress}
+            onContextMenu={(e) => e.preventDefault()}
             style={{
               borderRadius: 22,
               padding: '14px 16px',
@@ -226,7 +286,58 @@ export function PacksList({
           />
         </div>
         <Btn kind="primary" size="lg" label="Create pack" onClick={createPack} />
+        {deleteError && (
+          <span role="alert" style={{ color: 'var(--comets)', fontFamily: 'var(--font-body)', fontSize: 13 }}>
+            {deleteError}
+          </span>
+        )}
       </div>
+
+      {deleteConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(8,6,24,.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            zIndex: 60,
+          }}
+          onClick={() => setDeleteConfirm(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 340,
+              background: 'linear-gradient(180deg,#221B4F,#130F30)',
+              border: '1px solid rgba(200,180,255,.2)',
+              borderRadius: 24,
+              padding: '24px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'center' }}>
+              <span style={{ font: '700 18px var(--font-display)', color: 'var(--text)' }}>Delete {deleteConfirm.name}?</span>
+              <span style={{ font: '400 14px var(--font-body)', color: 'var(--text-muted)' }}>
+                This deletes the whole pack and all its cards. This can't be undone.
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <Btn kind="secondary" size="md" label="Cancel" onClick={() => setDeleteConfirm(null)} disabled={deleteBusy} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Btn kind="primary" size="md" label={deleteBusy ? 'Deleting…' : 'Delete'} onClick={confirmDeletePack} disabled={deleteBusy} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

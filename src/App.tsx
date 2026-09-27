@@ -438,13 +438,28 @@ function Gate() {
     ;(async () => {
       const { data } = await supabase
         .from('players')
-        .select('display_name, avatar, party_id, parties(room_code, host_id, status)')
+        .select('display_name, avatar, party_id, parties(room_code, host_id, status, created_at)')
         .eq('account_id', session.user.id)
         .order('created_at', { ascending: false })
         .limit(5)
       if (cancelled) return
-      type Row = { display_name: string; avatar: string; party_id: string; parties: { room_code: string; host_id: string; status: string } | null }
-      const active = (data as Row[] | null)?.find((row) => row.parties && row.parties.status !== 'finished')
+      type Row = {
+        display_name: string
+        avatar: string
+        party_id: string
+        parties: { room_code: string; host_id: string; status: string; created_at: string } | null
+      }
+      // Only rejoin a party that's genuinely still going — an old party
+      // abandoned mid-game (everyone just closed the tab, never played to
+      // 'finished') would otherwise stay "active" forever and silently drop
+      // a returning player straight back into a stale game from days ago.
+      const REJOIN_WINDOW_MS = 24 * 60 * 60 * 1000
+      const active = (data as Row[] | null)?.find(
+        (row) =>
+          row.parties &&
+          row.parties.status !== 'finished' &&
+          Date.now() - new Date(row.parties.created_at).getTime() < REJOIN_WINDOW_MS,
+      )
       if (active && active.parties) {
         setDisplayName(active.display_name)
         setAvatar(active.avatar)

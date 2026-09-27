@@ -1,5 +1,19 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from 'react'
 import { WEDGE_THRESHOLDS } from '../lib/scoringConstants'
+import { ease, dampedSpring, prefersReducedMotion, type ImpactTier } from '../lib/motion'
+
+/** Where on screen the guess landed, fired the instant the cover finishes clearing. */
+export type DialImpact = {
+  tier: ImpactTier
+  color: string
+  point: { x: number; y: number }
+  leftEnd: { x: number; y: number }
+  rightEnd: { x: number; y: number }
+}
+
+// Must match GameScreen's DIAL_REVEAL_MS (revealHoldMs + this).
+const SWEEP_MS = 900
+const FX_TAIL_MS = 1600
 
 // Geometry constants from docs/design/reference/Dial.dc.html's renderVals().
 const CX = 180
@@ -82,6 +96,8 @@ export function DialFan({
   glowWinner = true,
   revealHoldMs = 0,
   activeMover,
+  impactFx = false,
+  onImpact,
 }: {
   value: number
   interactive?: boolean
@@ -103,7 +119,12 @@ export function DialFan({
   revealHoldMs?: number
   /** Shows this player's avatar floating out past the needle tip, following it live — whoever is currently dragging the shared guess. */
   activeMover?: { avatar: string } | null
+  /** Full impact choreography (needle ring-out, shockwaves, shake) — only for the real in-game reveal, not decorative dials. */
+  impactFx?: boolean
+  /** Fires once, the moment the cover finishes clearing, with screen coordinates of where the guess landed. */
+  onImpact?: (impact: DialImpact) => void
 }) {
+  const [reducedMotion] = useState(prefersReducedMotion)
   const svgRef = useRef<SVGSVGElement>(null)
   const draggingRef = useRef(false)
   const isInteractive = interactive && !!onChange
@@ -191,36 +212,89 @@ export function DialFan({
           ? (value < target ? 0 : 4)
           : null
 
+  // Score tier this guess earned — drives how hard every impact effect hits.
+  const tier: ImpactTier =
+    winningBandIndex === 2 ? 4 : winningBandIndex === 1 || winningBandIndex === 3 ? 3 : winningBandIndex !== null ? 2 : 0
+  const tierColor = tier === 4 ? '#FFD166' : tier === 3 ? '#FF6FA3' : tier === 2 ? '#8C6BFF' : '#9A93B8'
+
   // Like the physical game's sliding scoring window: the colors and numbers
   // are already there, just covered by a panel that looks like the plain
   // ring. Reveal is that cover retracting left→right, not the bands
   // appearing — matches the real board more closely than a fade-in would.
+  //
+  // One clock drives the whole reveal so every beat stays in lockstep:
+  //   [0, hold)            suspense — the cover's handle pulses
+  //   [hold, impactAt)     sweep — cover pulls back, bands flash as uncovered
+  //   [impactAt, +FX_TAIL) impact — needle rings, shockwaves, shake/desaturate
   const shouldAnimate = showBands && animateReveal
-  const [revealProgress, setRevealProgress] = useState(shouldAnimate ? 0 : 1)
+  const fxEnabled = shouldAnimate && impactFx && showNeedle && !reducedMotion
+  const impactAt = revealHoldMs + SWEEP_MS
+  const endAt = impactAt + (fxEnabled ? FX_TAIL_MS : 0)
+  const [elapsed, setElapsed] = useState(shouldAnimate ? 0 : endAt)
+  const impactFiredRef = useRef(false)
+  const onImpactRef = useRef(onImpact)
+  onImpactRef.current = onImpact
   useEffect(() => {
     if (!shouldAnimate) return
-    let raf: number
-    const duration = 900
-    // Holds the cover fully closed for a beat before it starts retracting,
-    // so the reveal has a moment of suspense instead of starting instantly.
-    const timer = setTimeout(() => {
-      const start = performance.now()
-      function step(now: number) {
-        const progress = Math.min(1, (now - start) / duration)
-        const eased = 1 - Math.pow(1 - progress, 3)
-        setRevealProgress(eased)
-        if (progress < 1) raf = requestAnimationFrame(step)
+    let raf = 0
+    const start = performance.now()
+    function step(now: number) {
+      const e = Math.min(endAt, now - start)
+      setElapsed(e)
+      if (e >= impactAt && !impactFiredRef.current) {
+        impactFiredRef.current = true
+        const svg = svgRef.current
+        if (svg && onImpactRef.current) {
+          const r = svg.getBoundingClientRect()
+          const toScreen = ([px, py]: [number, number]) => ({ x: r.left + (px / 360) * r.width, y: r.top + (py / 250) * r.height })
+          onImpactRef.current({
+            tier,
+            color: tierColor,
+            point: toScreen(P(value, RM)),
+            leftEnd: toScreen(P(0.07, RM)),
+            rightEnd: toScreen(P(0.93, RM)),
+          })
+        }
       }
-      raf = requestAnimationFrame(step)
-    }, revealHoldMs)
-    return () => {
-      clearTimeout(timer)
-      cancelAnimationFrame(raf)
+      if (e < endAt) raf = requestAnimationFrame(step)
     }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
     // Runs once per mount only — a fresh DialFan instance is mounted per turn
     // reveal (see GameScreen's key={turn.id}).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sweep: slow to start (you can feel the hand pulling), fast through the
+  // middle, settling as it clears — rather than the old snap-then-coast.
+  const revealProgress = !shouldAnimate ? 1 : elapsed < revealHoldMs ? 0 : ease.inOutCubic(clamp01((elapsed - revealHoldMs) / SWEEP_MS))
+  const sweeping = shouldAnimate && revealProgress > 0 && revealProgress < 1
+
+  // Suspense: how far through the hold we are (the handle's pulse builds with it).
+  const holdT = revealHoldMs > 0 ? clamp01(elapsed / revealHoldMs) : 1
+
+  // Impact: the needle rings like it was struck, the dial kicks, and a miss
+  // drains the color out instead of celebrating.
+  const te = elapsed - impactAt
+  const hit = tier > 0
+  const kickAmp = { 4: 7, 3: 5, 2: 3.5, 0: 2.4 }[tier]
+  const needleKick = fxEnabled && te >= 0 ? (hit ? dampedSpring(te, kickAmp, 5.5, 4.2) : dampedSpring(te, kickAmp, 11, 7)) : 0
+  const shakeAmp = { 4: 7, 3: 4, 2: 2.5, 0: 0 }[tier]
+  const shakeX = fxEnabled && te >= 0 ? dampedSpring(te, shakeAmp, 14, 9) : 0
+  const shakeY = fxEnabled && te >= 0 ? dampedSpring(te + 18, shakeAmp * 0.6, 11, 9) : 0
+  const flashT = fxEnabled && te >= 0 ? 1 - clamp01(te / 450) : 0
+  const grayscale = fxEnabled && !hit && te >= 0 ? (te < 250 ? (te / 250) * 0.75 : Math.max(0.3, 0.75 - ((te - 250) / 900) * 0.45)) : 0
+  const brightness = fxEnabled && tier === 4 && te >= 0 ? 1 + 0.45 * (1 - clamp01(te / 320)) : 1
+  const impactPoint = P(value, RM)
+  const ringCount = { 4: 3, 3: 2, 2: 1, 0: 0 }[tier]
+  const ringReach = { 4: 100, 3: 76, 2: 56, 0: 0 }[tier]
+  const rings =
+    fxEnabled && te >= 0
+      ? Array.from({ length: ringCount }, (_, k) => {
+          const p = clamp01((te - k * 110) / 650)
+          return p <= 0 || p >= 1 ? null : { r: 6 + ease.outCubic(p) * ringReach, w: (1 - p) * 5, o: (1 - p) * 0.9 }
+        })
+      : []
   // Sweeps the full dial (0..1), not just the scoring-wedge strip — the
   // physical slider passes over the whole board edge-to-edge regardless of
   // where the numbers happen to sit, so this ignores `target`/thresholds
@@ -235,7 +309,14 @@ export function DialFan({
   const handlePoint = shouldAnimate && revealProgress < 1 ? P(clamp01(coverBoundary), RO + 6) : null
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        transform: shakeX || shakeY ? `translate(${shakeX.toFixed(2)}px, ${shakeY.toFixed(2)}px)` : undefined,
+        filter: grayscale || brightness !== 1 ? `grayscale(${grayscale.toFixed(3)}) brightness(${brightness.toFixed(3)})` : undefined,
+      }}
+    >
     <svg
       ref={svgRef}
       role="slider"
@@ -294,10 +375,19 @@ export function DialFan({
                 key={i}
                 d={b.d}
                 fill={b.fill}
-                style={isWinner ? { animation: `band-glow 1.3s ease-in-out 900ms infinite` } : undefined}
+                style={isWinner ? { animation: `band-glow 1.3s ease-in-out ${shouldAnimate ? impactAt : 0}ms infinite` } : undefined}
               />
             )
           })}
+          {shouldAnimate &&
+            bandDefs.map((b, i) => {
+              const start = [target - t.outer, target - t.inner, target - t.center, target + t.center, target + t.inner][i]
+              const passed = coverBoundary - Math.max(0, start)
+              const sweepFlash = sweeping && passed >= 0 ? clamp01(1 - passed / 0.09) * 0.6 : 0
+              const impactFlash = i === winningBandIndex ? flashT * 0.85 : 0
+              const o = Math.max(sweepFlash, impactFlash)
+              return o > 0.01 ? <path key={`flash${i}`} d={b.d} fill="#FFFFFF" opacity={o} /> : null
+            })}
           {[
             { m: target - (t.outer + t.inner) / 2, label: '2' },
             { m: target - (t.inner + t.center) / 2, label: '3' },
@@ -328,20 +418,52 @@ export function DialFan({
           {shouldAnimate && revealProgress < 1 && (
             <path d={coverPath} fill="#17B0A8" stroke="#0E7B75" strokeWidth={1.5} />
           )}
+          {sweeping && (() => {
+            const [x1, y1] = P(coverBoundary, RI - 3)
+            const [x2, y2] = P(coverBoundary, RO + 3)
+            return (
+              <g style={{ mixBlendMode: 'screen' }}>
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#FFFFFF" strokeWidth={9} strokeLinecap="round" opacity={0.18} />
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" opacity={0.95} />
+              </g>
+            )
+          })()}
           {handlePoint && (
             <g transform={`translate(${handlePoint[0].toFixed(1)} ${handlePoint[1].toFixed(1)})`}>
-              <circle r={9} fill="#0E7B75" stroke="#1A1233" strokeWidth={1.5} />
+              <circle
+                r={9 + (fxEnabled && elapsed < revealHoldMs ? Math.max(0, Math.sin(elapsed / 95)) * 2.2 * holdT : 0)}
+                fill="#0E7B75"
+                stroke="#1A1233"
+                strokeWidth={1.5}
+              />
               <circle r={3} fill="#F4F2FB" />
             </g>
           )}
         </>
       )}
 
+      {rings.map((ring, k) =>
+        ring ? (
+          <circle
+            key={`ring${k}`}
+            cx={impactPoint[0]}
+            cy={impactPoint[1]}
+            r={ring.r}
+            fill="none"
+            stroke={k === 0 ? '#FFFFFF' : tierColor}
+            strokeWidth={ring.w}
+            opacity={ring.o}
+          />
+        ) : null,
+      )}
+
       {showNeedle && (
         <>
-          {/* Needle drop shadow, drawn underneath the main needle. */}
-          <polygon points={needle} fill="#FFD166" opacity={0.25} transform="translate(0 3)" />
-          <polygon points={needle} fill={`url(#nd${uid})`} stroke="#FFF4D6" strokeWidth={1} strokeLinejoin="round" />
+          {/* Needle (+ its drop shadow) rotates about the pivot for the impact ring-out. */}
+          <g transform={needleKick ? `rotate(${needleKick.toFixed(3)} ${CX} ${CY})` : undefined}>
+            <polygon points={needle} fill="#FFD166" opacity={0.25} transform="translate(0 3)" />
+            <polygon points={needle} fill={`url(#nd${uid})`} stroke="#FFF4D6" strokeWidth={1} strokeLinejoin="round" />
+          </g>
 
           {/* Pivot cap. */}
           <path d="M148 181 A32 32 0 0 1 212 181 Z" fill={`url(#pl${uid})`} />

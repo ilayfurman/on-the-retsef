@@ -7,16 +7,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-@keyframes score-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.25); }
-  100% { transform: scale(1); }
-}
-
-.score-pop {
-  animation: score-pop 0.5s ease-out both;
-}
-
 @keyframes band-glow {
   0%, 100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); }
   50% { filter: drop-shadow(0 0 12px rgba(255,255,255,.85)); }
@@ -39,16 +29,6 @@ body {
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-/* Points earned this turn: pop in big, hold, then shrink/fly up toward the
-   scoreboard and fade — timed to land exactly when the real total updates. */
-@keyframes score-reveal-fly {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
-  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
-  32% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -190px) scale(0.35); }
-}
-
 @keyframes sound-pop-float {
   0% { opacity: 0; transform: translate(-50%, 40px) scale(0.7); }
   20% { opacity: 1; transform: translate(-50%, 0) scale(1.1); }
@@ -61,14 +41,51 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Zero points: nothing to fly toward the total, so it gets a goofy wobble
-   in place instead. */
-@keyframes score-reveal-whiff {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5) rotate(0deg); }
-  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(-10deg); }
-  30% { transform: translate(-50%, -50%) scale(1) rotate(10deg); }
-  45% { transform: translate(-50%, -50%) scale(1) rotate(-7deg); }
-  60% { transform: translate(-50%, -50%) scale(1) rotate(5deg); }
-  75% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.7) rotate(0deg); }
+/* Psychic's "New spectrum" pill (RerollButton). */
+.reroll-btn {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(180, 160, 255, 0.35);
+  background: linear-gradient(180deg, rgba(140, 107, 255, 0.24), rgba(140, 107, 255, 0.08));
+  box-shadow: 0 0 18px rgba(140, 107, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font: 600 14px var(--font-body);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.reroll-btn:hover:not(:disabled) {
+  border-color: rgba(200, 185, 255, 0.6);
+  box-shadow: 0 0 26px rgba(140, 107, 255, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.reroll-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.reroll-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.reroll-btn .reroll-icon {
+  color: var(--lavender);
+  transition: transform 0.4s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.reroll-btn:hover:not(:disabled) .reroll-icon {
+  transform: rotate(-40deg);
+}
+.reroll-btn .reroll-icon--spin {
+  animation: reroll-spin 0.7s linear infinite;
+}
+.reroll-note {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-left: 8px;
+  border-left: 1px solid rgba(200, 180, 255, 0.2);
+}
+@keyframes reroll-spin {
+  to { transform: rotate(360deg); }
 }

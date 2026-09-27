@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AuthProvider } from './features/auth/AuthProvider'
 import { useAuth } from './features/auth/useAuth'
 import { SignIn } from './features/auth/SignIn'
@@ -562,7 +562,18 @@ function Gate() {
   )
 }
 
+// Dev-only reveal FX playground (see RevealPreview). import.meta.env.DEV is
+// statically false in production builds, so this whole import is dropped.
+const RevealPreview = import.meta.env.DEV ? lazy(() => import('./features/dev/RevealPreview')) : null
+
 export default function App() {
+  if (RevealPreview && window.location.hash === '#/fx-preview') {
+    return (
+      <Suspense fallback={null}>
+        <RevealPreview />
+      </Suspense>
+    )
+  }
   return (
     <AuthProvider>
       <Gate />

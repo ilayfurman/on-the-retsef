@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { RollingNumber } from './RollingNumber'
 
 type Team = { id: string; name: string; score: number }
 
@@ -73,11 +74,12 @@ export function TeamScoreboard({
         const color = TEAM_COLORS[index % TEAM_COLORS.length]
         const isActive = t.id === activeTeamId
         return (
-          <div key={t.id} style={cardStyle(color, isActive, hasActive)}>
+          <div key={t.id} data-score-card={t.id} style={cardStyle(color, isActive, hasActive)}>
             <div style={nameRowStyle}>
               <span style={nameStyle}>{t.name}</span>
-              <span key={t.score} className="score-pop" style={scoreStyle(color)}>
-                {t.score}
+              {/* data-score-target: where a flying score lands (see ScoreFlight). */}
+              <span data-score-target={t.id}>
+                <RollingNumber value={t.score} style={scoreStyle(color)} />
               </span>
             </div>
           </div>

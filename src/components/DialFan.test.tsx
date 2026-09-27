@@ -77,3 +77,35 @@ describe('angleToValue (pure pointer-angle-to-dial-value math)', () => {
     expect(angleToValue(310, 220, CX, CY)).toBe(1)
   })
 })
+
+describe('DialFan reveal impact', () => {
+  it('fires onImpact exactly once, after the hold + sweep, with the scoring tier', () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+    try {
+      const onImpact = vi.fn()
+      // Guess dead-on the target → bullseye (tier 4).
+      render(<DialFan value={0.5} revealedTarget={0.5} revealHoldMs={1000} impactFx onImpact={onImpact} />)
+      vi.advanceTimersByTime(1800)
+      expect(onImpact).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(300)
+      expect(onImpact).toHaveBeenCalledTimes(1)
+      expect(onImpact.mock.calls[0][0].tier).toBe(4)
+      vi.advanceTimersByTime(3000)
+      expect(onImpact).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports tier 0 for a guess outside every scoring band', () => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+    try {
+      const onImpact = vi.fn()
+      render(<DialFan value={0.1} revealedTarget={0.8} onImpact={onImpact} />)
+      vi.advanceTimersByTime(1500)
+      expect(onImpact.mock.calls[0][0].tier).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

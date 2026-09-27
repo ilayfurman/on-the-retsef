@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabaseClient'
 import { useTurn } from './useTurn'
-import { DialFan } from '../../components/DialFan'
+import { DialFan, type DialImpact } from '../../components/DialFan'
+import { ParticleLayer } from '../../components/fx/ParticleLayer'
+import { ScoreFlight, SCORE_EMERGE_HOLD_MS, SCORE_FLY_MS, SCORE_MISS_EXTRA_MS, type ScoreFlightSpec } from './ScoreFlight'
+import { celebrateImpact } from './revealFx'
 import { TeamScoreboard, colorForTeam } from '../../components/TeamScoreboard'
 import { GameHeader } from '../../components/GameHeader'
 import { ClueCard } from '../../components/ClueCard'
@@ -10,6 +13,7 @@ import { Starfield } from '../../components/Starfield'
 import { useDialBroadcast } from './useDialBroadcast'
 import { Soundboard } from '../noises/Soundboard'
 import { HostMenu } from './HostMenu'
+import { RerollButton } from './RerollButton'
 import { computeScore } from '../../lib/scoringConstants'
 
 type Team = { id: string; name: string; score: number }
@@ -18,13 +22,6 @@ type Team = { id: string; name: string; score: number }
 // its internal 900ms slide) — the score only updates once the needle's
 // actual reveal has visually finished, so the two never feel disconnected.
 const DIAL_REVEAL_MS = 1900
-const SCORE_POPUP_HOLD_MS = 700
-const SCORE_POPUP_FLY_MS = 400
-// A scored popup flies up toward the total right away, so it stays legible
-// even at the normal duration — but a zero flies nowhere and just fades in
-// place, so it needs real extra time on screen to actually be read before
-// it's gone.
-const SCORE_POPUP_ZERO_EXTRA_MS = 1200
 // Blank pause after the popup is gone, before the next turn actually loads.
 // The zero case already spends extra time with the popup ON screen (above),
 // so it gets a much shorter blank pause afterward — otherwise the two
@@ -32,16 +29,18 @@ const SCORE_POPUP_ZERO_EXTRA_MS = 1200
 // rather than "take a moment to read that".
 const ADVANCE_TRAILING_BUFFER_MS = 1000
 // 0, not just "shorter" — the zero case already got its reading time from
-// SCORE_POPUP_ZERO_EXTRA_MS above; any gap the popup fading and the next
-// turn actually loading is left AFTER this fires is round-trip time for
+// SCORE_MISS_EXTRA_MS (a miss has no flight, so it lingers instead); any gap
+// between the popup fading and the next turn loading is round-trip time for
 // advance_turn's RPC call plus the next turn reaching this client (a poll
 // tick in useTurn, or the parties subscription/poll in App.tsx), not a
 // deliberate pause — nothing left here to shrink further client-side.
 const ADVANCE_TRAILING_BUFFER_ZERO_MS = 0
 
 function scorePopupDurationMs(points: number): number {
-  return SCORE_POPUP_HOLD_MS + SCORE_POPUP_FLY_MS + (points > 0 ? 0 : SCORE_POPUP_ZERO_EXTRA_MS)
+  return SCORE_EMERGE_HOLD_MS + SCORE_FLY_MS + (points > 0 ? 0 : SCORE_MISS_EXTRA_MS)
 }
+
+type RevealOutcome = { points: number; color: string; teamId: string; kind: 'guess' | 'bet'; direction: 'left' | 'right' | null }
 
 export function GameScreen({
   turnId,
@@ -78,8 +77,9 @@ export function GameScreen({
   // during a reveal so the total doesn't update before the dial has visually
   // finished showing where the guess landed. Synced live at every other time.
   const [displayedTeams, setDisplayedTeams] = useState(teams)
-  const [scorePopup, setScorePopup] = useState<{ points: number; color: string; isBetOutcome: boolean } | null>(null)
+  const [flight, setFlight] = useState<ScoreFlightSpec | null>(null)
   const revealHandledRef = useRef<string | null>(null)
+  const outcomeRef = useRef<Promise<RevealOutcome> | null>(null)
   const advancingRef = useRef(false)
   const { broadcastMove, broadcastDragEnd } = useDialBroadcast(
     turnId,
@@ -99,6 +99,7 @@ export function GameScreen({
     let cancelled = false
     async function loadSpectrum() {
       if (!turn?.spectrum_id) return
+      setSpectrumLabels(null)
       const { data } = await supabase
         .from('spectrums')
         .select('left_label, right_label')
@@ -154,47 +155,40 @@ export function GameScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn?.id])
 
-  // Once a turn is revealed, wait for the dial's own reveal animation to
-  // finish, pop up the points earned, then land them on the real total.
-  // This is per-VIEWER, not one shared popup: the guessing team sees their
-  // computeScore points, but a betting team's real score only ever moves by
-  // a flat +1/+0 for guessing the correct side — showing them the guessing
-  // team's (often much bigger) number made it look like they'd scored the
-  // same amount, when their own team's row in `teams` never actually did.
-  // Guarded to run once per turn via revealHandledRef.
+  // Reveal choreography is driven by the dial itself: it reports the exact
+  // moment (and screen position) the cover clears via onImpact, and the
+  // score flight launches from there. This effect just resolves, as early as
+  // possible, WHAT this viewer earned — per-viewer, not one shared popup: the
+  // guessing team sees their computeScore points, a betting team sees its
+  // flat +1/+0 (showing them the guessing team's bigger number made it look
+  // like they'd scored the same). Guarded to run once per turn.
   useEffect(() => {
     if (!turn || turn.status !== 'revealed' || turn.target_position === null || turn.guess_position === null) return
     if (revealHandledRef.current === turn.id) return
     revealHandledRef.current = turn.id
 
-    const isGuessingTeam = myTeamId === turn.team_id
     const turnId = turn.id
-
-    const timers: ReturnType<typeof setTimeout>[] = []
-    async function showPopup() {
-      let points: number
-      let color: string
-      let isBetOutcome = false
-      if (isGuessingTeam) {
-        points = computeScore(turn!.target_position!, turn!.guess_position!)
-        color = colorForTeam(teamsRef.current, turn!.team_id)
-      } else {
-        const { data } = await supabase.from('bets').select('correct').eq('turn_id', turnId).eq('team_id', myTeamId).maybeSingle()
-        points = data?.correct ? 1 : 0
-        color = colorForTeam(teamsRef.current, myTeamId)
-        isBetOutcome = true
+    const activeTeamId = turn.team_id
+    const target = turn.target_position
+    const guess = turn.guess_position
+    outcomeRef.current = (async (): Promise<RevealOutcome> => {
+      if (myTeamId === activeTeamId) {
+        return { points: computeScore(target, guess), color: colorForTeam(teamsRef.current, activeTeamId), teamId: activeTeamId, kind: 'guess', direction: null }
       }
-      setScorePopup({ points, color, isBetOutcome })
-      timers.push(
-        setTimeout(() => {
-          setDisplayedTeams(teamsRef.current)
-          setScorePopup(null)
-        }, scorePopupDurationMs(points)),
-      )
-    }
+      const { data } = await supabase.from('bets').select('correct, direction').eq('turn_id', turnId).eq('team_id', myTeamId).maybeSingle()
+      return {
+        points: data?.correct ? 1 : 0,
+        color: colorForTeam(teamsRef.current, myTeamId),
+        teamId: myTeamId,
+        kind: 'bet',
+        direction: (data?.direction as 'left' | 'right' | undefined) ?? null,
+      }
+    })()
 
-    timers.push(setTimeout(() => void showPopup(), DIAL_REVEAL_MS))
-    return () => timers.forEach(clearTimeout)
+    // Safety net: if the dial never reports its impact (e.g. the tab was
+    // backgrounded mid-reveal), the scoreboard still catches up.
+    const t = setTimeout(() => setDisplayedTeams(teamsRef.current), DIAL_REVEAL_MS + scorePopupDurationMs(0) + 400)
+    return () => clearTimeout(t)
   }, [turn?.status, turn?.id, turn?.target_position, turn?.guess_position, turn?.team_id, myTeamId])
 
   // Individual teammates' picks for the current bet — a team's bet only
@@ -251,10 +245,14 @@ export function GameScreen({
     if (error) setActionError(error.message)
   }
 
-  async function rerollSpectrum() {
+  async function rerollSpectrum(): Promise<boolean> {
     setActionError(null)
     const { error } = await supabase.rpc('reroll_spectrum', { p_turn_id: turnId })
-    if (error) setActionError(error.message)
+    if (error) {
+      setActionError(error.message)
+      return false
+    }
+    return true
   }
 
   async function lockGuess() {
@@ -286,6 +284,14 @@ export function GameScreen({
   function endGuessDrag() {
     setActiveMoverId(null)
     broadcastDragEnd(myPlayerId)
+  }
+
+  function handleImpact(impact: DialImpact) {
+    celebrateImpact(impact)
+    outcomeRef.current?.then((o) => {
+      const from = o.kind === 'bet' && o.direction ? (o.direction === 'left' ? impact.leftEnd : impact.rightEnd) : impact.point
+      setFlight({ from, points: o.points, color: o.color, teamId: o.teamId, kind: o.kind })
+    })
   }
 
   return (
@@ -402,6 +408,7 @@ export function GameScreen({
         <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
           {turn.status === 'clue' && isPsychic && (
             <DialFan
+              key={turn.spectrum_id}
               value={turn.target_position ?? 0.5}
               revealedTarget={turn.target_position ?? undefined}
               showNeedle={false}
@@ -453,69 +460,17 @@ export function GameScreen({
               value={turn.guess_position ?? 0.5}
               revealedTarget={turn.target_position ?? undefined}
               revealHoldMs={1000}
+              impactFx
+              onImpact={handleImpact}
               left={spectrumLabels?.left}
               right={spectrumLabels?.right}
             />
           )}
-          {scorePopup && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '38%',
-                left: '50%',
-                zIndex: 5,
-                pointerEvents: 'none',
-                textAlign: 'center',
-                animation:
-                  scorePopup.points > 0
-                    ? `score-reveal-fly ${scorePopupDurationMs(scorePopup.points)}ms ease-in both`
-                    : `score-reveal-whiff ${scorePopupDurationMs(scorePopup.points)}ms ease-in-out both`,
-              }}
-            >
-              {scorePopup.points > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <span
-                    style={{
-                      font: '800 56px var(--font-display)',
-                      color: scorePopup.color,
-                      textShadow: `0 0 28px ${scorePopup.color}`,
-                    }}
-                  >
-                    +{scorePopup.points}
-                  </span>
-                  {scorePopup.isBetOutcome && (
-                    <span style={{ font: '700 15px var(--font-body)', color: 'var(--text-muted)' }}>Called the right side!</span>
-                  )}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <span style={{ fontSize: 48 }}>{scorePopup.isBetOutcome ? '🙅' : '🫠'}</span>
-                  <span style={{ font: '700 15px var(--font-body)', color: 'var(--text-muted)' }}>
-                    {scorePopup.isBetOutcome ? 'Wrong side' : 'Nothing this time'}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+          <ParticleLayer />
+          {flight && <ScoreFlight spec={flight} onArrive={() => setDisplayedTeams(teamsRef.current)} />}
         </div>
 
-        {turn.status === 'clue' && isPsychic && !turn.spectrum_rerolled && (
-          <button
-            type="button"
-            onClick={rerollSpectrum}
-            style={{
-              alignSelf: 'center',
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              font: '600 13px var(--font-body)',
-              cursor: 'pointer',
-              padding: '2px 8px',
-            }}
-          >
-            🔄 Get a new spectrum
-          </button>
-        )}
+        {turn.status === 'clue' && isPsychic && !turn.spectrum_rerolled && <RerollButton onReroll={rerollSpectrum} />}
 
         {turn.status === 'clue' && isPsychic && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.15fr', gap: 10 }}>

@@ -12,6 +12,7 @@ export type Turn = {
   clue_text: string | null
   guess_position: number | null
   status: 'clue' | 'guessing' | 'betting' | 'revealed'
+  spectrum_rerolled: boolean
 }
 
 // `turns` deliberately has no SELECT RLS policy on the base table — that's

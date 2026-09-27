@@ -12,6 +12,18 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x))
 }
 
+/** Scales a spectrum end label down as it gets longer, matching the same
+ * idea as ClueCard's clue text — a long label wraps onto a second line
+ * instead of running off the edge of the dial at a fixed size meant for a
+ * short word. */
+function endLabelFontSize(text: string): number {
+  const len = text.length
+  if (len <= 10) return 17
+  if (len <= 16) return 15
+  if (len <= 24) return 13
+  return 11
+}
+
 /** P(v, r) — a point at value v (0..1) on a circle of radius r around the pivot. */
 function P(v: number, r: number): [number, number] {
   const a = Math.PI * (1 - v)
@@ -343,15 +355,17 @@ export function DialFan({
           position: 'absolute',
           left: '15.5%',
           bottom: '5%',
+          maxWidth: '40%',
           transform: 'translateX(-50%)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 2,
           color: 'var(--text)',
-          font: '600 17px/1 var(--font-body)',
+          font: `600 ${endLabelFontSize(left)}px/1.2 var(--font-body)`,
           pointerEvents: 'none',
-          whiteSpace: 'nowrap',
+          textAlign: 'center',
+          overflowWrap: 'break-word',
         }}
       >
         <span style={{ font: '400 22px/1 var(--font-body)' }}>&larr;</span>
@@ -364,15 +378,17 @@ export function DialFan({
           position: 'absolute',
           left: '84.5%',
           bottom: '5%',
+          maxWidth: '40%',
           transform: 'translateX(-50%)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 2,
           color: 'var(--text)',
-          font: '600 17px/1 var(--font-body)',
+          font: `600 ${endLabelFontSize(right)}px/1.2 var(--font-body)`,
           pointerEvents: 'none',
-          whiteSpace: 'nowrap',
+          textAlign: 'center',
+          overflowWrap: 'break-word',
         }}
       >
         <span style={{ font: '400 22px/1 var(--font-body)' }}>&rarr;</span>

@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/errorMessage'
 import { Starfield } from '../../components/Starfield'
 import { Btn } from '../../components/Btn'
 import { ShuffleReveal } from './ShuffleReveal'
+import { AvatarPicker, AVATAR_BG } from './AvatarPicker'
 
 type Player = { id: string; display_name: string; avatar: string; team_id: string | null; confirmed_rematch: boolean }
 type Team = { id: string; name: string }
@@ -27,9 +28,9 @@ function rgba(hex: string, alpha: number) {
 const cardStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  gap: 12,
-  padding: '14px 16px',
-  borderRadius: 22,
+  gap: 8,
+  padding: '10px 14px',
+  borderRadius: 20,
   border: '1px solid var(--surface-border)',
   background: 'var(--surface)',
   boxSizing: 'border-box',
@@ -118,7 +119,7 @@ const stepperRowStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 12,
-  minHeight: 44,
+  minHeight: 36,
 }
 
 const stepperControlsStyle: CSSProperties = {
@@ -189,6 +190,11 @@ export function Lobby({
   const [noisesEnabled, setNoisesEnabledState] = useState(true)
   const [hasStarted, setHasStarted] = useState(false)
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null)
+  const [editingIdentity, setEditingIdentity] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editAvatar, setEditAvatar] = useState('')
+  const [identityBusy, setIdentityBusy] = useState(false)
+  const [identityError, setIdentityError] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [rematchBusy, setRematchBusy] = useState(false)
   const [rematchError, setRematchError] = useState<string | null>(null)
@@ -635,6 +641,41 @@ export function Lobby({
     }
   }
 
+  function openIdentityEditor(currentName: string, currentAvatar: string) {
+    setEditName(currentName)
+    setEditAvatar(currentAvatar)
+    setIdentityError(null)
+    setEditingIdentity(true)
+  }
+
+  async function saveIdentityEdit() {
+    if (!editName.trim()) {
+      setIdentityError('Name cannot be empty.')
+      return
+    }
+    setIdentityBusy(true)
+    setIdentityError(null)
+    try {
+      const { error } = await supabase.rpc('update_my_player_identity', {
+        p_party_id: partyId,
+        p_display_name: editName.trim(),
+        p_avatar: editAvatar,
+      })
+      if (error) throw error
+      try {
+        localStorage.setItem('wavelength-identity', JSON.stringify({ displayName: editName.trim(), avatar: editAvatar }))
+      } catch {
+        // non-critical convenience only
+      }
+      setEditingIdentity(false)
+      await loadPlayers()
+    } catch (err) {
+      setIdentityError(errorMessage(err, 'Could not update your name/avatar. Try again.'))
+    } finally {
+      setIdentityBusy(false)
+    }
+  }
+
   // Every team needs at least 2 players, so the number of teams can never
   // exceed half the player count — matches the floor the shuffle/pick RPCs
   // enforce server-side.
@@ -707,9 +748,9 @@ export function Lobby({
           minHeight: '100dvh',
           display: 'flex',
           flexDirection: 'column',
-          padding: '32px 16px',
+          padding: '18px 16px',
           boxSizing: 'border-box',
-          gap: 12,
+          gap: 8,
           maxWidth: 480,
           margin: '0 auto',
         }}
@@ -778,6 +819,86 @@ export function Lobby({
             <Btn kind="accent" size="sm" label={linkCopied ? 'Copied!' : 'Share link'} onClick={copyShareLink} />
           </div>
         </div>
+
+        {me &&
+          (editingIdentity ? (
+            <div style={cardStyle}>
+              <span style={{ ...labelStyle, fontSize: 13 }}>Edit your name &amp; avatar</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span
+                  style={{
+                    ...avatarChipStyle(48),
+                    background: AVATAR_BG[editAvatar] ?? 'var(--violet)',
+                    flex: 'none',
+                  }}
+                >
+                  {editAvatar}
+                </span>
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  aria-label="Your name"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    height: 42,
+                    borderRadius: 999,
+                    background: 'var(--input-bg)',
+                    border: '1px solid var(--input-border)',
+                    padding: '0 16px',
+                    color: 'var(--text)',
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 15,
+                    fontWeight: 600,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+              <AvatarPicker value={editAvatar} onChange={setEditAvatar} />
+              {identityError && (
+                <span role="alert" style={{ color: 'var(--comets)', fontFamily: 'var(--font-body)', fontSize: 13 }}>
+                  {identityError}
+                </span>
+              )}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <Btn kind="secondary" size="sm" label="Cancel" onClick={() => setEditingIdentity(false)} disabled={identityBusy} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Btn kind="primary" size="sm" label={identityBusy ? 'Saving…' : 'Save'} onClick={saveIdentityEdit} disabled={identityBusy} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                ...cardStyle,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ ...avatarChipStyle(40), background: AVATAR_BG[me.avatar] ?? 'var(--violet)' }}>{me.avatar}</span>
+                <span style={{ ...labelStyle, fontSize: 15 }}>{me.display_name}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => openIdentityEditor(me.display_name, me.avatar)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  font: '600 13px var(--font-body)',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          ))}
 
         {hasStarted && (
           <div style={cardStyle}>

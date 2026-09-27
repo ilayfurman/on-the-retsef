@@ -58,7 +58,9 @@ describe('Lobby', () => {
   it('shows the room code and lists joined players', async () => {
     render(<Lobby partyId="party-1" roomCode="ABCD" isHost={true} onStartGame={vi.fn()} />)
     expect(screen.getByText('ABCD')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('Alex')).toBeInTheDocument())
+    // Now shown twice — once in the "you" identity card, once in the
+    // player/team list — so this checks presence, not a single unique match.
+    await waitFor(() => expect(screen.getAllByText('Alex').length).toBeGreaterThan(0))
   })
 
   // These exercise the multi-team flow, which needs at least 4 players —

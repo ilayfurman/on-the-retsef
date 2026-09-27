@@ -328,129 +328,91 @@ export function ShuffleReveal({
             transform: boxesForward ? 'scale(1)' : 'scale(0.86)',
           }}
         >
-          {myBox && (
-            <div
-              style={{
-                position: 'relative',
-                overflow: 'hidden',
-                borderRadius: 26,
-                padding: '20px 16px',
-                background: `radial-gradient(120% 100% at 50% 0%, ${rgba(myBox.color, 0.3)}, ${rgba(myBox.color, 0.05)} 70%)`,
-                border: `1.5px solid ${rgba(myBox.color, 0.5)}`,
-                boxShadow: boxesForward ? `0 0 30px ${rgba(myBox.color, 0.18)}` : 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 14,
-              }}
-            >
-              <span style={{ font: '600 11px/1 var(--font-body)', letterSpacing: '.16em', color: 'var(--text-muted)' }}>YOU'RE ON</span>
-              <span style={{ font: '700 36px/1 var(--font-display)', color: 'var(--text)' }}>{myBox.name}</span>
-              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {myBox.members.map((p, memberIndex) => {
-                  const isMe = !!myPlayerId && p.id === myPlayerId
-                  return (
-                    <div
-                      key={p.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 6,
-                        animation: curtainsUp ? `reveal-fade-in .35s ease-out ${150 + memberIndex * 80}ms both` : undefined,
-                      }}
-                    >
-                      <span
+          {/* Every box shares the exact same shape/size/style — only the
+              viewer's own box is scaled up via transform to stand out, so
+              "which one is mine" reads instantly without the boxes actually
+              being different layouts from one another. */}
+          {[...(myBox ? [myBox] : []), ...otherBoxes].map((box, i) => {
+            const isMine = box.id === myBox?.id
+            return (
+              <div
+                key={box.id}
+                style={{
+                  position: 'relative',
+                  overflow: 'hidden',
+                  borderRadius: 24,
+                  padding: '16px 16px',
+                  background: `radial-gradient(120% 100% at 50% 0%, ${rgba(box.color, 0.3)}, ${rgba(box.color, 0.05)} 70%)`,
+                  border: `1.5px solid ${rgba(box.color, isMine ? 0.55 : 0.25)}`,
+                  boxShadow: boxesForward && isMine ? `0 0 30px ${rgba(box.color, 0.2)}` : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 10,
+                  transform: `scale(${boxesForward && isMine ? 1.08 : 1})`,
+                  transformOrigin: 'center',
+                  zIndex: isMine ? 2 : 1,
+                  transition: 'transform 0.4s ease, box-shadow 0.4s ease',
+                }}
+              >
+                {isMine && (
+                  <span style={{ font: '600 11px/1 var(--font-body)', letterSpacing: '.16em', color: 'var(--text-muted)' }}>YOU'RE ON</span>
+                )}
+                <span style={{ font: `700 ${isMine ? 26 : 18}px/1.15 var(--font-display)`, color: 'var(--text)', textAlign: 'center' }}>
+                  {box.name}
+                </span>
+                <div style={{ display: 'flex', gap: isMine ? 14 : 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {box.members.map((p, memberIndex) => {
+                    const isMe = !!myPlayerId && p.id === myPlayerId
+                    return (
+                      <div
+                        key={p.id}
                         style={{
-                          width: 58,
-                          height: 58,
-                          borderRadius: '50%',
                           display: 'flex',
+                          flexDirection: 'column',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 30,
-                          background: rgba(myBox.color, 0.25),
-                          boxShadow: isMe ? '0 0 0 3px #120F2E, 0 0 0 5px #fff' : 'none',
+                          gap: 5,
+                          animation: curtainsUp ? `reveal-fade-in .35s ease-out ${150 + memberIndex * 80}ms both` : undefined,
                         }}
                       >
-                        {p.avatar}
-                      </span>
-                      <span style={{ font: '600 13px var(--font-body)', color: isMe ? 'var(--text)' : 'var(--text-muted)' }}>
-                        {isMe ? 'You' : p.display_name}
-                      </span>
-                    </div>
-                  )
-                })}
+                        <span
+                          style={{
+                            width: isMine ? 52 : 38,
+                            height: isMine ? 52 : 38,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: isMine ? 26 : 19,
+                            background: rgba(box.color, 0.25),
+                            boxShadow: isMe ? '0 0 0 3px #120F2E, 0 0 0 5px #fff' : 'none',
+                          }}
+                        >
+                          {p.avatar}
+                        </span>
+                        <span style={{ font: `600 ${isMine ? 13 : 11}px var(--font-body)`, color: isMe ? 'var(--text)' : 'var(--text-muted)' }}>
+                          {isMe ? 'You' : p.display_name}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Curtain — covers this box until its turn to reveal (mine first, others staggered after). */}
+                <div
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: box.color,
+                    transform: curtainsUp ? 'translateY(-105%)' : 'translateY(0)',
+                    transition: `transform ${CURTAIN_MS}ms cubic-bezier(.65,0,.35,1)`,
+                    transitionDelay: curtainsUp ? `${i * CURTAIN_STAGGER_MS}ms` : '0ms',
+                  }}
+                />
               </div>
-
-              {/* Curtain — covers this card until it's this reveal's turn. */}
-              <div
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: myBox.color,
-                  transform: curtainsUp ? 'translateY(-105%)' : 'translateY(0)',
-                  transition: `transform ${CURTAIN_MS}ms cubic-bezier(.65,0,.35,1)`,
-                  transitionDelay: curtainsUp ? '0ms' : '0ms',
-                }}
-              />
-            </div>
-          )}
-
-          {otherBoxes.map((box, i) => (
-            <div
-              key={box.id}
-              style={{
-                position: 'relative',
-                overflow: 'hidden',
-                borderRadius: 22,
-                padding: '14px 16px',
-                background: 'linear-gradient(180deg, rgba(52,40,110,.55), rgba(24,18,56,.6))',
-                border: '1px solid rgba(200,180,255,.14)',
-                display: 'flex',
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <span style={{ font: '700 14px var(--font-body)', color: box.color }}>{box.name}</span>
-              <div style={{ display: 'flex' }}>
-                {box.members.map((p, memberIndex) => (
-                  <span
-                    key={p.id}
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 18,
-                      background: rgba(box.color, 0.25),
-                      border: '2px solid #1C1642',
-                      marginLeft: memberIndex === 0 ? 0 : -8,
-                    }}
-                  >
-                    {p.avatar}
-                  </span>
-                ))}
-              </div>
-
-              {/* Curtain — covers this row until its turn to reveal (staggered after myBox). */}
-              <div
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: box.color,
-                  transform: curtainsUp ? 'translateY(-105%)' : 'translateY(0)',
-                  transition: `transform ${CURTAIN_MS}ms cubic-bezier(.65,0,.35,1)`,
-                  transitionDelay: curtainsUp ? `${(i + 1) * CURTAIN_STAGGER_MS}ms` : '0ms',
-                }}
-              />
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Avatar cluster — position driven entirely by the rAF loop above via

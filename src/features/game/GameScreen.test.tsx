@@ -7,6 +7,7 @@ import type { Turn } from './useTurn'
 const baseTurn: Turn = {
   id: 't1', party_id: 'p1', round_number: 1, team_id: 'team-a', psychic_player_id: 'player-1',
   spectrum_id: 's1', target_position: null, clue_text: null, guess_position: null, status: 'clue',
+  spectrum_rerolled: false,
 }
 
 vi.mock('../../lib/supabaseClient', () => ({

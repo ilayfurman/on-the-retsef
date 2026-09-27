@@ -9,6 +9,8 @@ import { FinalScoreboard } from '../game/FinalScoreboard'
  *   e.g. #/final-preview/12,9       two teams
  *        #/final-preview/8,11,5,11  four teams, a tie at the top
  *        #/final-preview/7/2/4      one team, 2 players, 4 turns played
+ *   add /lose to watch as a player on the last-place team instead
+ *        #/final-preview/12,9/lose
  */
 
 const AVATARS = ['🌮', '😬', '🐝', '🦄', '🦊', '🐙', '🌶️', '🎈', '🧠', '🐸', '🦁', '🍩']
@@ -16,11 +18,13 @@ const NAMES = ['You', 'Maya', 'Noam', 'Dana', 'Omer', 'Shira', 'Itay', 'Yael', '
 const TEAM_NAMES = ['Pink Team', 'Sky Team', 'Violet Team', 'Gold Team']
 
 function parse() {
-  const parts = window.location.hash.replace('#/final-preview', '').split('/').filter(Boolean)
+  const all = window.location.hash.replace('#/final-preview', '').split('/').filter(Boolean)
+  const lose = all.includes('lose')
+  const parts = all.filter((x) => x !== 'lose')
   const scores = (parts[0] ?? '12,9').split(',').map(Number)
   const perTeam = Number(parts[1] ?? 2)
   const turns = parts[2] ? Number(parts[2]) : null
-  return { scores, perTeam, turns }
+  return { scores, perTeam, turns, lose }
 }
 
 export default function FinalPreview() {
@@ -34,12 +38,15 @@ export default function FinalPreview() {
       return { id: `p${n}`, display_name: NAMES[n % NAMES.length], avatar: AVATARS[n % AVATARS.length], team_id: t.id }
     }),
   )
+  // "You" is the first player on the chosen team: the lowest scorer with /lose.
+  const myTeamIdx = cfg.lose ? cfg.scores.indexOf(Math.min(...cfg.scores)) : 0
+  const me = players.find((p) => p.team_id === teams[myTeamIdx]?.id)?.id ?? 'p0'
   return (
     <FinalScoreboard
       key={run}
       teams={teams}
       players={players}
-      myPlayerId="p0"
+      myPlayerId={me}
       turnsPlayed={cfg.turns}
       rounds={2}
       celebrate

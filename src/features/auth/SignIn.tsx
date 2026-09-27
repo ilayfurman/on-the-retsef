@@ -125,7 +125,7 @@ export function SignIn() {
         }}
       >
         {!codeSent ? (
-          <form onSubmit={sendCode} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+          <form onSubmit={sendCode} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <div
               style={{
                 flex: 1,
@@ -153,18 +153,20 @@ export function SignIn() {
                 <br />
                 How close can you get?
               </p>
+              <input
+                id="email"
+                aria-label="Email"
+                type="email"
+                placeholder="you@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                style={{ ...pillInputStyle, width: '100%', marginTop: 8 }}
+              />
+              <div style={{ width: '100%' }}>
+                <Btn kind="primary" size="lg" label="Send code" />
+              </div>
             </div>
-            <input
-              id="email"
-              aria-label="Email"
-              type="email"
-              placeholder="you@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              style={pillInputStyle}
-            />
-            <Btn kind="primary" size="lg" label="Send code" />
           </form>
         ) : (
           <form onSubmit={verifyCode} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>

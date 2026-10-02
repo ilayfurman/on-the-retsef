@@ -73,6 +73,8 @@ export function GameScreen({
   const [spectrumLabels, setSpectrumLabels] = useState<{ left: string; right: string } | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [activeMoverId, setActiveMoverId] = useState<string | null>(null)
+  const activeMoverIdRef = useRef(activeMoverId)
+  activeMoverIdRef.current = activeMoverId
   // The scoreboard's own displayed scores — deliberately lags behind `teams`
   // during a reveal so the total doesn't update before the dial has visually
   // finished showing where the guess landed. Synced live at every other time.
@@ -201,6 +203,41 @@ export function GameScreen({
   useEffect(() => {
     setTeamVotes({})
   }, [turnId])
+
+  // The guess only locks once every guesser has pressed "Lock it in" at the
+  // same spot (see lock_guess); moving the dial clears everyone's lock. This
+  // polls who has locked so far, for the "2 of 3 locked in" row.
+  const [guessLocks, setGuessLocks] = useState<Record<string, number>>({})
+  const guessLocksRef = useRef(guessLocks)
+  guessLocksRef.current = guessLocks
+  useEffect(() => {
+    setGuessLocks({})
+  }, [turnId])
+  useEffect(() => {
+    if (turn?.status !== 'guessing') return
+    let cancelled = false
+    async function poll() {
+      const { data } = await supabase.from('guess_locks').select('player_id, position').eq('turn_id', turnId)
+      if (cancelled || !data) return
+      const map: Record<string, number> = {}
+      for (const row of data as { player_id: string; position: number }[]) map[row.player_id] = Number(row.position)
+      setGuessLocks(map)
+    }
+    void poll()
+    const interval = setInterval(poll, 600)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [turn?.status, turnId])
+
+  // Once someone has locked in, everyone's dial shows that spot (unless
+  // they're the one dragging it somewhere new).
+  const lockedSpot = Object.values(guessLocks)[0]
+  useEffect(() => {
+    if (lockedSpot !== undefined && activeMoverIdRef.current !== myPlayerId) setLocalGuess(lockedSpot)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedSpot])
   useEffect(() => {
     const isActive = !!turn && myTeamId === turn.team_id
     if (turn?.status !== 'betting' || isActive || !myTeamId) return
@@ -259,6 +296,8 @@ export function GameScreen({
     setActionError(null)
     const { error } = await supabase.rpc('lock_guess', { p_turn_id: turnId, p_guess_position: localGuess })
     if (error) setActionError(error.message)
+    // Show my lock right away rather than waiting for the next poll.
+    else if (myPlayerId) setGuessLocks((prev) => (prev[myPlayerId] === undefined ? { ...Object.fromEntries(Object.entries(prev).filter(([, v]) => v === localGuess)), [myPlayerId]: localGuess } : prev))
   }
 
   async function castBetVote(direction: 'left' | 'right') {
@@ -266,6 +305,11 @@ export function GameScreen({
     const { error } = await supabase.rpc('cast_bet_vote', { p_turn_id: turnId, p_direction: direction })
     if (error) setActionError(error.message)
   }
+
+  // Guess agreement: every guesser (team minus psychic) locks the same spot.
+  const guessers = players.filter((p) => p.team_id === turn.team_id && p.id !== turn.psychic_player_id)
+  const lockedPlayers = guessers.filter((p) => guessLocks[p.id] !== undefined)
+  const iLocked = !!myPlayerId && guessLocks[myPlayerId] !== undefined
 
   const myTeamPlayers = players.filter((p) => p.team_id === myTeamId)
   const leftVoters = myTeamPlayers.filter((p) => teamVotes[p.id] === 'left')
@@ -276,6 +320,12 @@ export function GameScreen({
     (leftVoters.length === myTeamPlayers.length || rightVoters.length === myTeamPlayers.length)
 
   function moveGuess(v: number) {
+    // Moving the dial means the team hasn't agreed yet — clear every lock.
+    if (Object.keys(guessLocksRef.current).length > 0 && v !== lockedSpot) {
+      guessLocksRef.current = {}
+      setGuessLocks({})
+      void supabase.rpc('clear_guess_locks', { p_turn_id: turnId })
+    }
     setLocalGuess(v)
     setActiveMoverId(myPlayerId)
     broadcastMove(v, myPlayerId)
@@ -480,7 +530,45 @@ export function GameScreen({
         )}
 
         {turn.status === 'guessing' && isActiveTeam && !isPsychic && (
-          <Btn kind="primary" size="lg" label="Lock it in" onClick={lockGuess} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {iLocked ? (
+              <Btn kind="secondary" size="lg" label="Locked in ✓" disabled />
+            ) : (
+              <Btn kind="primary" size="lg" label={lockedPlayers.length > 0 ? 'Agree & lock it in' : 'Lock it in'} onClick={lockGuess} />
+            )}
+            {guessers.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 26 }}>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {guessers.map((p) => (
+                    <span
+                      key={p.id}
+                      title={p.display_name}
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 15,
+                        background: guessLocks[p.id] !== undefined ? 'rgba(255,209,102,.25)' : 'rgba(255,255,255,.06)',
+                        border: guessLocks[p.id] !== undefined ? '1.5px solid var(--gold)' : '1.5px dashed rgba(200,180,255,.3)',
+                        opacity: guessLocks[p.id] !== undefined ? 1 : 0.55,
+                        transition: 'all .2s ease',
+                      }}
+                    >
+                      {p.avatar}
+                    </span>
+                  ))}
+                </div>
+                <span style={{ font: '500 12px var(--font-body)', color: 'var(--text-muted)' }}>
+                  {lockedPlayers.length === 0
+                    ? 'Everyone has to lock in the same spot'
+                    : `${lockedPlayers.length} of ${guessers.length} locked in — moving the dial resets`}
+                </span>
+              </div>
+            )}
+          </div>
         )}
 
         {turn.status === 'betting' && !isActiveTeam && (

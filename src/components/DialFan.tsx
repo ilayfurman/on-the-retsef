@@ -477,8 +477,12 @@ export function DialFan({
         style={{
           position: 'absolute',
           left: '15.5%',
-          bottom: '5%',
-          maxWidth: '40%',
+          // Same fixed width and top line for both ends: a max-width let the
+          // right label shrink to the sliver between its anchor and the edge
+          // (wrapping far sooner than the left), and bottom-anchoring then
+          // put the two arrows at different heights.
+          top: '73%',
+          width: '36%',
           transform: 'translateX(-50%)',
           display: 'flex',
           flexDirection: 'column',
@@ -500,8 +504,12 @@ export function DialFan({
         style={{
           position: 'absolute',
           left: '84.5%',
-          bottom: '5%',
-          maxWidth: '40%',
+          // Same fixed width and top line for both ends: a max-width let the
+          // right label shrink to the sliver between its anchor and the edge
+          // (wrapping far sooner than the left), and bottom-anchoring then
+          // put the two arrows at different heights.
+          top: '73%',
+          width: '36%',
           transform: 'translateX(-50%)',
           display: 'flex',
           flexDirection: 'column',

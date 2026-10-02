@@ -84,7 +84,7 @@ export default function RevealPreview() {
               right="Delicacy"
             />
           ) : (
-            <DialFan value={0.5} left="Crime" right="Delicacy" />
+            <DialFan value={0.5} left={window.location.search.includes("long") ? "Bad karaoke song" : "Crime"} right={window.location.search.includes("long") ? "Great karaoke song" : "Delicacy"} />
           )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>

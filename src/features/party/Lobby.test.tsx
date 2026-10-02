@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Lobby } from './Lobby'
 import { supabase } from '../../lib/supabaseClient'
 
-const partyRow = { num_teams: 2, rounds: 3, team_mode: 'random', noises_enabled: true, has_started: false }
+const partyRow: Record<string, unknown> = { num_teams: 2, rounds: 3, team_mode: 'random', noises_enabled: true, has_started: false, status: 'lobby' }
 let playersData: { id: string; display_name: string; avatar: string; team_id: string | null; confirmed_rematch: boolean }[] = []
 let teamsData: { id: string; name: string }[] = []
 
@@ -50,11 +50,27 @@ vi.mock('../../lib/supabaseClient', () => ({
 }))
 
 beforeEach(() => {
+  Object.assign(partyRow, { has_started: false, status: 'lobby' })
   playersData = [{ id: 'p1', display_name: 'Alex', avatar: '🌮', team_id: null, confirmed_rematch: false }]
   teamsData = []
 })
 
 describe('Lobby', () => {
+  it('shows the rematch card in a lobby reopened after a game', async () => {
+    Object.assign(partyRow, { has_started: true, status: 'lobby' })
+    render(<Lobby partyId="party-1" roomCode="ABCD" isHost={true} onStartGame={vi.fn()} />)
+    expect(await screen.findByText(/rematch/i)).toBeInTheDocument()
+  })
+
+  it("doesn't flash the rematch card while a game is starting", async () => {
+    // start_game sets has_started and status='playing' together; the lobby
+    // can see that for a moment before the app switches to the game.
+    Object.assign(partyRow, { has_started: true, status: 'playing' })
+    render(<Lobby partyId="party-1" roomCode="ABCD" isHost={true} onStartGame={vi.fn()} />)
+    await waitFor(() => expect(screen.getAllByText('Alex').length).toBeGreaterThan(0))
+    expect(screen.queryByText(/rematch/i)).not.toBeInTheDocument()
+  })
+
   it('shows the room code and lists joined players', async () => {
     render(<Lobby partyId="party-1" roomCode="ABCD" isHost={true} onStartGame={vi.fn()} />)
     expect(screen.getByText('ABCD')).toBeInTheDocument()

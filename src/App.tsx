@@ -357,6 +357,9 @@ function PartyRoom({
         onStartGame={async () => {
           const { error } = await supabase.rpc('start_game', { p_party_id: partyId })
           if (error) throw error
+          // Switch to the game right away instead of waiting for realtime or
+          // the next poll to notice the new status.
+          await reloadPartyState()
         }}
         onLeave={onBackToHome}
       />

@@ -189,6 +189,10 @@ export function Lobby({
   const [teamMode, setTeamModeState] = useState<TeamMode>('random')
   const [noisesEnabled, setNoisesEnabledState] = useState(true)
   const [hasStarted, setHasStarted] = useState(false)
+  // has_started flips to true the moment a game STARTS, not only when a
+  // rematch reopens the lobby — so the rematch card must also check the
+  // party is really back in 'lobby', or it flashes while the game starts.
+  const [partyStatus, setPartyStatus] = useState<string | null>(null)
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null)
   const [editingIdentity, setEditingIdentity] = useState(false)
   const [editName, setEditName] = useState('')
@@ -370,7 +374,7 @@ export function Lobby({
   async function loadPartySettings() {
     const { data } = await supabase
       .from('parties')
-      .select('num_teams, rounds, team_mode, noises_enabled, has_started, shuffle_nonce')
+      .select('num_teams, rounds, team_mode, noises_enabled, has_started, shuffle_nonce, status')
       .eq('id', partyId)
       .single()
     if (data) {
@@ -379,6 +383,7 @@ export function Lobby({
       setTeamModeState(data.team_mode as TeamMode)
       setNoisesEnabledState(data.noises_enabled)
       setHasStarted(data.has_started)
+      setPartyStatus(data.status ?? null)
       // Non-host players pick up the host's Shuffle/Start reveal here,
       // regardless of whether this call came from the realtime subscription,
       // the focus listener, or the polling fallback below — one path, so a
@@ -916,7 +921,7 @@ export function Lobby({
             </div>
           ))}
 
-        {hasStarted && (
+        {hasStarted && partyStatus === 'lobby' && (
           <div style={cardStyle}>
             <span style={{ ...labelStyle, whiteSpace: 'nowrap' }}>
               Rematch <span style={{ ...mutedStyle, fontWeight: 400 }}>&middot; {players.filter((p) => p.confirmed_rematch).length}/{players.length} in</span>

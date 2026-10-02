@@ -298,6 +298,12 @@ function PartyRoom({
     onBackToHome()
   }
   const me = players.find((p) => p.id === myPlayerId)
+  // Read during render, not only from the edge effect: FinalScoreboard
+  // decides whether to play its show on its very first render, and the
+  // effect that sets celebrateEnd only runs *after* that render — so on its
+  // own the flag always arrived one render too late and the show never
+  // played. prevStatusRef still holds 'playing' during that first render.
+  const celebrateNow = celebrateEnd || (status === 'finished' && prevStatusRef.current === 'playing')
   const leaveErrorBanner = leaveError && (
     <p
       role="alert"
@@ -330,7 +336,7 @@ function PartyRoom({
           myPlayerId={myPlayerId}
           turnsPlayed={turnsPlayed}
           rounds={rounds}
-          celebrate={celebrateEnd}
+          celebrate={celebrateNow}
           sound={noisesEnabled}
           onPlayAgain={async () => {
             const { error } = await supabase.rpc('confirm_rematch', { p_party_id: partyId })
@@ -421,7 +427,7 @@ function PartyRoom({
           myPlayerId={myPlayerId}
           turnsPlayed={turnsPlayed}
           rounds={rounds}
-          celebrate={celebrateEnd}
+          celebrate={celebrateNow}
           sound={noisesEnabled}
           endedReason={endedReason}
           onPlayAgain={async () => {

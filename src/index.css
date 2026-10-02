@@ -154,3 +154,7 @@ body {
   color: #FFD166;
   text-shadow: 0 0 12px rgba(255, 209, 102, .6);
 }
+@keyframes card-open {
+  0% { opacity: .4; transform: scaleY(.85); }
+  100% { opacity: 1; transform: scaleY(1); }
+}

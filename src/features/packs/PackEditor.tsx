@@ -132,34 +132,22 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
     await load()
   }
 
-  // Tapping a card opens it in the "Add one" form, filled in, to edit.
+  // Tapping a card opens it right where it is in the list, both sides
+  // filled in, to edit — the "Add one" form above stays for adding.
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editLeft, setEditLeft] = useState('')
+  const [editRight, setEditRight] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
-  const formRef = useRef<HTMLDivElement>(null)
-  const leftInputRef = useRef<HTMLInputElement>(null)
 
   function startEdit(sp: Spectrum) {
-    setMode('one')
     setEditingId(sp.id)
-    setLeft(sp.left_label)
-    setRight(sp.right_label)
+    setEditLeft(sp.left_label)
+    setEditRight(sp.right_label)
     setSpectrumError(null)
-    requestAnimationFrame(() => {
-      formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
-      leftInputRef.current?.focus({ preventScroll: true })
-    })
   }
-
-  // Switching to "Paste a list"/"Full replace" drops an edit in progress.
-  useEffect(() => {
-    if (mode !== 'one' && editingId) cancelEdit()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode])
 
   function cancelEdit() {
     setEditingId(null)
-    setLeft('')
-    setRight('')
   }
 
   async function saveEdit() {
@@ -167,7 +155,7 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
     setSavingEdit(true)
     setSpectrumError(null)
     try {
-      const { error } = await supabase.rpc('update_spectrum', { p_spectrum_id: editingId, p_left_label: left.trim(), p_right_label: right.trim() })
+      const { error } = await supabase.rpc('update_spectrum', { p_spectrum_id: editingId, p_left_label: editLeft.trim(), p_right_label: editRight.trim() })
       if (error) throw error
       cancelEdit()
       await load()
@@ -478,23 +466,13 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
         </div>
 
         {mode === 'one' && (
-          <div ref={formRef} style={editingId ? { ...cardStyle, border: '1px solid rgba(255,209,102,.45)', boxShadow: '0 0 24px rgba(255,209,102,.12)' } : cardStyle}>
-            {editingId && (
-              <span style={{ font: '600 11px/1 var(--font-body)', letterSpacing: '.14em', color: 'var(--gold)', padding: '0 4px' }}>EDITING CARD</span>
-            )}
+          <div style={cardStyle}>
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 8, alignItems: 'center' }}>
-              <input ref={leftInputRef} aria-label="Left label" placeholder="Left" value={left} onChange={(e) => setLeft(e.target.value)} style={inputStyle} />
+              <input aria-label="Left label" placeholder="Left" value={left} onChange={(e) => setLeft(e.target.value)} style={inputStyle} />
               <span style={{ font: '400 20px/1 var(--font-body)', color: 'var(--text-muted)' }}>⟷</span>
               <input aria-label="Right label" placeholder="Right" value={right} onChange={(e) => setRight(e.target.value)} style={inputStyle} />
             </div>
-            {editingId ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
-                <Btn kind="ghost" size="sm" label="Cancel" onClick={cancelEdit} disabled={savingEdit} />
-                <Btn kind="primary" size="sm" label={savingEdit ? 'Saving…' : 'Save'} onClick={saveEdit} disabled={savingEdit || !left.trim() || !right.trim()} />
-              </div>
-            ) : (
-              <Btn kind="secondary" size="sm" label="Add spectrum" onClick={addSpectrum} disabled={!left.trim() || !right.trim()} />
-            )}
+            <Btn kind="secondary" size="sm" label="Add spectrum" onClick={addSpectrum} disabled={!left.trim() || !right.trim()} />
           </div>
         )}
 
@@ -660,7 +638,41 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
           </span>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {spectrums.map((s) => (
+          {spectrums.map((s) =>
+            editingId === s.id ? (
+              <div
+                key={s.id}
+                style={{
+                  ...cardStyle,
+                  border: '1px solid rgba(255,209,102,.5)',
+                  boxShadow: '0 0 24px rgba(255,209,102,.12)',
+                  animation: 'card-open .22s ease-out',
+                }}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(0,1fr)', gap: 8, alignItems: 'center' }}>
+                  <input
+                    autoFocus
+                    aria-label="Edit left label"
+                    value={editLeft}
+                    onChange={(e) => setEditLeft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Escape' && cancelEdit()}
+                    style={inputStyle}
+                  />
+                  <span style={{ font: '400 20px/1 var(--font-body)', color: 'var(--text-muted)' }}>⟷</span>
+                  <input
+                    aria-label="Edit right label"
+                    value={editRight}
+                    onChange={(e) => setEditRight(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Escape' && cancelEdit()}
+                    style={inputStyle}
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                  <Btn kind="ghost" size="sm" label="Cancel" onClick={cancelEdit} disabled={savingEdit} />
+                  <Btn kind="primary" size="sm" label={savingEdit ? 'Saving…' : 'Save'} onClick={saveEdit} disabled={savingEdit || !editLeft.trim() || !editRight.trim()} />
+                </div>
+              </div>
+            ) : (
             <div key={s.id} style={{ position: 'relative', overflow: 'hidden', borderRadius: 999 }}>
               <button
                 onClick={() => deleteSpectrum(s.id)}
@@ -694,7 +706,7 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
                   padding: '0 16px',
                   borderRadius: 999,
                   background: '#181038',
-                  border: editingId === s.id ? '1px solid rgba(255,209,102,.6)' : '1px solid rgba(200,180,255,.08)',
+                  border: '1px solid rgba(200,180,255,.08)',
                   cursor: 'pointer',
                   position: 'relative',
                   touchAction: 'pan-y',
@@ -714,7 +726,8 @@ export function PackEditor({ packId, onBack }: { packId: string; onBack?: () => 
                 <span style={{ font: '500 15px/1 var(--font-body)', color: 'var(--text)' }}>{s.right_label}</span>
               </div>
             </div>
-          ))}
+            ),
+          )}
         </div>
 
         <Btn

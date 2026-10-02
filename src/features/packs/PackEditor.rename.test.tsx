@@ -30,22 +30,23 @@ describe('PackEditor rename and edit', () => {
     expect(screen.getByText('Movie Night')).toBeInTheDocument()
   })
 
-  it('opens a tapped card in the form, filled in, and saves the edit', async () => {
+  it('opens a tapped card in place, filled in, and saves the edit', async () => {
     render(<PackEditor packId="pack-1" />)
     const row = (await screen.findByText('Cold')).parentElement!
     fireEvent.pointerDown(row, { clientX: 100, pointerId: 1 })
     fireEvent.pointerUp(row, { clientX: 100, pointerId: 1 })
 
-    expect(screen.getByText(/editing card/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/left label/i)).toHaveValue('Cold')
-    expect(screen.getByLabelText(/right label/i)).toHaveValue('Hot')
-    expect(screen.queryByRole('button', { name: /add spectrum/i })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/edit left label/i)).toHaveValue('Cold')
+    expect(screen.getByLabelText(/edit right label/i)).toHaveValue('Hot')
+    // The add form above is untouched.
+    expect(screen.getByLabelText(/^left label/i)).toHaveValue('')
+    expect(screen.getByRole('button', { name: /add spectrum/i })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText(/right label/i), { target: { value: 'Scorching' } })
+    fireEvent.change(screen.getByLabelText(/edit right label/i), { target: { value: 'Scorching' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(() =>
       expect(supabase.rpc).toHaveBeenCalledWith('update_spectrum', { p_spectrum_id: 's1', p_left_label: 'Cold', p_right_label: 'Scorching' }),
     )
-    await waitFor(() => expect(screen.getByRole('button', { name: /add spectrum/i })).toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByLabelText(/edit left label/i)).not.toBeInTheDocument())
   })
 })

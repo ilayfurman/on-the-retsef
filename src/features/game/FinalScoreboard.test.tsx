@@ -63,4 +63,21 @@ describe('FinalScoreboard', () => {
     expect(screen.getByText('7 points in 4 turns')).toBeInTheDocument()
     expect(screen.queryByText(/wins/i)).not.toBeInTheDocument()
   })
+
+  it('skips the show when the game ended because a player left', () => {
+    render(
+      <FinalScoreboard
+        teams={[{ id: 'a', name: 'Pink Team', score: 0 }]}
+        celebrate
+        sound
+        endedReason="player_left"
+        onPlayAgain={vi.fn()}
+        onLeave={vi.fn()}
+      />
+    )
+    // Straight to the result: final title and usable buttons, no suspense title.
+    expect(screen.queryByText(/how did you do/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/a player left/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /play again/i }).closest('div')).toHaveStyle({ pointerEvents: 'auto' })
+  })
 })

@@ -212,7 +212,8 @@ export function FinalScoreboard({
   /** Set when the game was cut short rather than reaching its natural end — e.g. 'player_left' left a team below 2 players. */
   endedReason?: string | null
 }) {
-  const [animate] = useState(() => celebrate && !prefersReducedMotion() && teams.length > 0)
+  // A game cut short because someone left gets no show — just the results.
+  const [animate] = useState(() => celebrate && !prefersReducedMotion() && teams.length > 0 && endedReason !== 'player_left')
   const [phase, setPhase] = useState<Phase>(animate ? 'intro' : 'done')
 
   const single = teams.length === 1
@@ -279,7 +280,8 @@ export function FinalScoreboard({
 
   // Snapshot for the one-shot animation loop (the show runs on the result
   // as it stood when the game ended).
-  const show = useRef({ lanes, single, soloMax, maxScore, tier: level.tier, tie, sound })
+  // Nothing to celebrate when nobody scored: no drumroll, no ta-da.
+  const show = useRef({ lanes, single, soloMax, maxScore, tier: level.tier, tie, sound: sound && maxScore > 0 })
 
   useEffect(() => {
     if (!animate) return
@@ -356,6 +358,11 @@ export function FinalScoreboard({
         skipRef.current = false
         drum?.pause()
       }
+      // While the drumroll plays, its own playback position is the clock:
+      // frames can stall (screen dimmed, tab in the background) while audio
+      // keeps going, and a separate clock then lands the ta-da anywhere but
+      // on the final hit.
+      if (drum && !drum.paused && !drum.ended && drum.currentTime > 0) start = now - drum.currentTime * 1000
       const t = now - start
       const pts = t < INTRO_MS ? 0 : pointsAt((t - INTRO_MS) / D, top)
 
@@ -425,7 +432,9 @@ export function FinalScoreboard({
       if (!impacted && t >= impactAt) {
         impacted = true
         setPhase('won')
-        tada?.play()?.catch(() => {})
+        // Only if we're on time for the final hit — after a long stall the
+        // drumroll is long over, and a late ta-da just sounds wrong.
+        if (t < impactAt + 400) tada?.play()?.catch(() => {})
         onImpact()
         nextSparkle.at = t + 1600
       }

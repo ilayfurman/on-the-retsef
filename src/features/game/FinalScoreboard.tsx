@@ -35,6 +35,7 @@ const INTRO_MS = 750
 // race is timed to top out exactly on it, with the ta-da layered on top.
 const DRUM_HIT_MS = 3580
 const COUNT_MS = DRUM_HIT_MS - INTRO_MS
+const ZERO_BEAT_MS = 900
 const CROWN_DELAY_MS = 140
 const CROWN_FALL_MS = 420
 const BUTTONS_AFTER_MS = 1000
@@ -281,14 +282,16 @@ export function FinalScoreboard({
   // Snapshot for the one-shot animation loop (the show runs on the result
   // as it stood when the game ended).
   // Nothing to celebrate when nobody scored: no drumroll, no ta-da.
-  const show = useRef({ lanes, single, soloMax, maxScore, tier: level.tier, tie, sound: sound && maxScore > 0 })
+  // ...but a sad trombone instead, as the zero result pops.
+  const show = useRef({ lanes, single, soloMax, maxScore, tier: level.tier, tie, sound: sound && maxScore > 0, sadSound: sound && maxScore === 0 })
 
   useEffect(() => {
     if (!animate) return
     const S = show.current
     const scale = S.single ? S.soloMax : Math.max(1, S.maxScore)
     const top = S.single ? S.lanes[0].team.score : S.maxScore
-    const D = COUNT_MS
+    // Nothing to race when nobody scored: just a short beat before the result.
+    const D = top > 0 ? COUNT_MS : ZERO_BEAT_MS
     const impactAt = INTRO_MS + D
     const lands = S.lanes.map((l) => (l.isWinner || S.single ? impactAt : INTRO_MS + landU(l.team.score, top) * D))
     const landed = S.lanes.map(() => false)
@@ -305,6 +308,8 @@ export function FinalScoreboard({
     const drum = S.sound ? new Audio('/sounds/drumroll.mp3') : null
     const tada = S.sound ? new Audio('/sounds/tada.mp3') : null
     tada?.load()
+    const sad = S.sadSound ? new Audio('/sounds/sad-trombone.mp3') : null
+    sad?.load()
     const begin = () => {
       if (start === null) start = performance.now()
     }
@@ -434,7 +439,10 @@ export function FinalScoreboard({
         setPhase('won')
         // Only if we're on time for the final hit — after a long stall the
         // drumroll is long over, and a late ta-da just sounds wrong.
-        if (t < impactAt + 400) tada?.play()?.catch(() => {})
+        if (t < impactAt + 400) {
+          tada?.play()?.catch(() => {})
+          sad?.play()?.catch(() => {})
+        }
         onImpact()
         nextSparkle.at = t + 1600
       }
@@ -460,6 +468,7 @@ export function FinalScoreboard({
       clearTimeout(fallback)
       drum?.pause()
       tada?.pause()
+      sad?.pause()
     }
   }, [animate])
 
